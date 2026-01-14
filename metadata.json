@@ -1,0 +1,8 @@
+{
+  "name": "TaskFlow - Gerenciamento Inteligente",
+  "description": "Uma plataforma SaaS moderna para gerenciamento de tarefas recorrentes e automações, com interface intuitiva e recursos de IA.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
