@@ -1,13 +1,12 @@
-
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-
+// Certifique-se de que a interface Notification existe em '../types' ou defina aqui
 interface Notification {
   id: string;
-  type: 'task_due' | 'task_failed' | 'system' | 'reminder';
   title: string;
   message: string;
+  type: 'task_due' | 'task_failed' | 'system' | 'reminder';
   read: boolean;
   created_at: string;
   task_id?: string;
@@ -46,7 +45,6 @@ const Header: React.FC = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Buscar notificações do usuário (assumindo que há uma tabela notifications)
       const { data, error } = await supabase
         .from('notifications')
         .select('*')
@@ -55,12 +53,13 @@ const Header: React.FC = () => {
         .limit(10);
 
       if (error) {
-        console.error('Erro ao buscar notificações:', error);
+        // Se a tabela não existir, não quebra a aplicação, apenas loga
+        console.warn('Tabela de notificações não encontrada ou erro ao buscar.');
         return;
       }
 
       setNotifications(data || []);
-      setUnreadCount(data?.filter(n => !n.read).length || 0);
+      setUnreadCount(data?.filter((n: any) => !n.read).length || 0);
     } catch (error) {
       console.error('Erro ao buscar notificações:', error);
     }
@@ -74,7 +73,7 @@ const Header: React.FC = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Buscar em tarefas
+      // 1. Buscar em tarefas
       const { data: tasks } = await supabase
         .from('tasks')
         .select('id, title, description')
@@ -82,7 +81,7 @@ const Header: React.FC = () => {
         .or(`title.ilike.%${searchTerm}%,description.ilike.%${searchTerm}%`)
         .limit(5);
 
-      // Buscar em tarefas recorrentes
+      // 2. Buscar em tarefas recorrentes
       const { data: recurring } = await supabase
         .from('recurring_tasks')
         .select('id, name, description')
@@ -90,23 +89,22 @@ const Header: React.FC = () => {
         .or(`name.ilike.%${searchTerm}%,description.ilike.%${searchTerm}%`)
         .limit(5);
 
-      // Buscar em logs
+      // 3. Buscar em logs (CORRIGIDO: task_logs -> automation_logs)
       const { data: logs } = await supabase
-        .from('task_logs')
-        .select('id, task_name, message')
+        .from('automation_logs') // Nome correto da tabela
+        .select('id, task_name, error_message') // Colunas corretas
         .eq('user_id', user.id)
-        .or(`task_name.ilike.%${searchTerm}%,message.ilike.%${searchTerm}%`)
+        .or(`task_name.ilike.%${searchTerm}%,error_message.ilike.%${searchTerm}%`) // Busca no nome ou mensagem de erro
         .limit(5);
 
-      // Navegar para a página mais relevante com resultados
+      // Lógica de navegação baseada no que foi encontrado
       if (tasks && tasks.length > 0) {
-        navigate('/tasks', { state: { searchTerm } });
+        navigate('/tasks', { state: { searchTerm } }); // Você pode tratar esse state na página Tasks depois
       } else if (recurring && recurring.length > 0) {
         navigate('/recurring', { state: { searchTerm } });
       } else if (logs && logs.length > 0) {
         navigate('/logs', { state: { searchTerm } });
       } else {
-        // Nenhum resultado encontrado
         alert('Nenhum resultado encontrado para: ' + searchTerm);
       }
     } catch (error) {

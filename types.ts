@@ -37,3 +37,14 @@ export interface LogEntry {
   dateTime: string;
   status: 'Sucesso' | 'Erro';
 }
+
+export interface Notification {
+  id: string;
+  type: 'task_due' | 'task_failed' | 'system' | 'reminder';
+  title: string;
+  message: string;
+  read: boolean;
+  created_at: string;
+  task_id?: string;
+  automation_id?: string;
+}

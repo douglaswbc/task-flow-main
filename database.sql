@@ -66,7 +66,18 @@ create table public.automations (
   created_at timestamp with time zone default now()
 );
 
-alter table public.automations enable row level security;
+-- Política de acesso: Usuário só vê suas próprias automações
+create policy "Usuários podem ver suas próprias automações" on public.automations
+  for select using (auth.uid() = user_id);
+
+create policy "Usuários podem criar automações" on public.automations
+  for insert with check (auth.uid() = user_id);
+
+create policy "Usuários podem atualizar suas automações" on public.automations
+  for update using (auth.uid() = user_id);
+
+create policy "Usuários podem deletar suas automações" on public.automations
+  for delete using (auth.uid() = user_id);
 
 
 -- 4. Tabela de Logs (Baseada em types.ts:LogEntry e LogsHistory.tsx)
@@ -80,4 +91,32 @@ create table public.automation_logs (
   error_message text -- Caso falhe
 );
 
-alter table public.automation_logs enable row level security;
+-- Política de acesso: Usuário só vê seus próprios logs
+create policy "Usuários podem ver seus próprios logs" on public.automation_logs
+  for select using (auth.uid() = user_id);
+
+
+-- 5. Tabela de Notificações (Para o sistema de notificações do Header)
+create table public.notifications (
+  id uuid default gen_random_uuid() primary key,
+  user_id uuid references auth.users not null,
+  type text check (type in ('task_due', 'task_failed', 'system', 'reminder')) not null,
+  title text not null,
+  message text not null,
+  read boolean default false,
+  task_id uuid references public.tasks, -- Opcional, para notificações relacionadas a tarefas
+  automation_id uuid references public.automations, -- Opcional, para notificações relacionadas a automações
+  created_at timestamp with time zone default now()
+);
+
+alter table public.notifications enable row level security;
+
+-- Política de acesso: Usuário só vê suas próprias notificações
+create policy "Usuários podem ver suas próprias notificações" on public.notifications
+  for select using (auth.uid() = user_id);
+
+create policy "Sistema pode criar notificações" on public.notifications
+  for insert with check (true); -- Permite que o sistema crie notificações
+
+create policy "Usuários podem atualizar suas notificações" on public.notifications
+  for update using (auth.uid() = user_id);
