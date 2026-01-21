@@ -22,6 +22,7 @@ const Settings: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [newPassword, setNewPassword] = useState('');
+  const [bitrixWebhook, setBitrixWebhook] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -49,6 +50,7 @@ const Settings: React.FC = () => {
         });
       }
       await fetchSessions();
+      await fetchIntegrations();
     } catch (error) {
       console.error('Erro ao buscar dados:', error);
     } finally {
@@ -165,6 +167,47 @@ const Settings: React.FC = () => {
     }
   };
 
+  const fetchIntegrations = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('integrations')
+        .select('webhook_url')
+        .eq('service_name', 'bitrix24')
+        .maybeSingle();
+
+      if (error) throw error;
+      if (data) setBitrixWebhook(data.webhook_url);
+    } catch (error) {
+      console.error('Erro ao buscar integrações:', error);
+    }
+  };
+
+  const handleSaveBitrix = async () => {
+    setSaving(true);
+    try {
+      const { data: { user } } = await (supabase.auth as any).getUser();
+      if (!user) throw new Error('Usuário não autenticado');
+
+      const { error } = await supabase
+        .from('integrations')
+        .upsert({
+          user_id: user.id,
+          service_name: 'bitrix24',
+          webhook_url: bitrixWebhook,
+          is_active: true
+        }, { onConflict: 'user_id, service_name' });
+
+
+      if (error) throw error;
+      alert('Integração com Bitrix24 salva com sucesso!');
+    } catch (error: any) {
+      alert('Erro ao salvar integração: ' + error.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+
   if (loading) {
     return (
       <div className="max-w-4xl mx-auto space-y-12 pb-20">
@@ -196,7 +239,7 @@ const Settings: React.FC = () => {
                 <span className="material-symbols-outlined text-gray-400 text-4xl">account_circle</span>
               )}
             </div>
-            <button 
+            <button
               onClick={() => fileInputRef.current?.click()}
               className="text-xs font-bold text-primary hover:underline"
               disabled={saving}
@@ -214,8 +257,8 @@ const Settings: React.FC = () => {
           <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="flex flex-col gap-2">
               <label className="text-xs font-bold text-gray-500 uppercase">Nome Completo</label>
-              <input 
-                className="w-full bg-gray-50 dark:bg-slate-800 border-none rounded-lg p-3 text-sm focus:ring-primary" 
+              <input
+                className="w-full bg-gray-50 dark:bg-slate-800 border-none rounded-lg p-3 text-sm focus:ring-primary"
                 placeholder="Seu nome completo"
                 value={profile.full_name}
                 onChange={(e) => setProfile({ ...profile, full_name: e.target.value })}
@@ -223,8 +266,8 @@ const Settings: React.FC = () => {
             </div>
             <div className="flex flex-col gap-2">
               <label className="text-xs font-bold text-gray-500 uppercase">Endereço de E-mail</label>
-              <input 
-                className="w-full bg-gray-50 dark:bg-slate-800 border-none rounded-lg p-3 text-sm focus:ring-primary" 
+              <input
+                className="w-full bg-gray-50 dark:bg-slate-800 border-none rounded-lg p-3 text-sm focus:ring-primary"
                 placeholder="seu@email.com"
                 value={profile.email}
                 onChange={(e) => setProfile({ ...profile, email: e.target.value })}
@@ -233,8 +276,8 @@ const Settings: React.FC = () => {
             </div>
             <div className="flex flex-col gap-2 md:col-span-2">
               <label className="text-xs font-bold text-gray-500 uppercase">Cargo</label>
-              <input 
-                className="w-full bg-gray-50 dark:bg-slate-800 border-none rounded-lg p-3 text-sm focus:ring-primary" 
+              <input
+                className="w-full bg-gray-50 dark:bg-slate-800 border-none rounded-lg p-3 text-sm focus:ring-primary"
                 placeholder="Ex: Product Designer"
                 value={profile.role}
                 onChange={(e) => setProfile({ ...profile, role: e.target.value })}
@@ -243,7 +286,7 @@ const Settings: React.FC = () => {
           </div>
         </div>
         <div className="flex justify-end">
-          <button 
+          <button
             onClick={handleSaveProfile}
             disabled={saving}
             className="px-6 py-2 bg-primary text-white rounded-lg font-bold hover:opacity-90 disabled:opacity-50"
@@ -258,7 +301,7 @@ const Settings: React.FC = () => {
           <div className="flex items-center gap-2 text-primary"><span className="material-symbols-outlined">language</span><h2 className="text-xl font-bold">Preferências</h2></div>
           <div className="flex flex-col gap-2">
             <label className="text-xs font-bold text-gray-500 uppercase">Fuso Horário</label>
-            <select 
+            <select
               className="w-full bg-gray-50 dark:bg-slate-800 border-none rounded-lg text-sm p-3"
               value={preferences.timezone}
               onChange={(e) => setPreferences({ ...preferences, timezone: e.target.value })}
@@ -270,7 +313,7 @@ const Settings: React.FC = () => {
           </div>
           <div className="flex flex-col gap-2">
             <label className="text-xs font-bold text-gray-500 uppercase">Idioma Padrão</label>
-            <select 
+            <select
               className="w-full bg-gray-50 dark:bg-slate-800 border-none rounded-lg text-sm p-3"
               value={preferences.language}
               onChange={(e) => setPreferences({ ...preferences, language: e.target.value })}
@@ -287,7 +330,7 @@ const Settings: React.FC = () => {
           <div className="space-y-4">
             <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-slate-800 rounded-lg">
               <div className="flex flex-col"><p className="text-sm font-bold">Senha</p><p className="text-xs text-gray-500">{security.passwordLastChanged}</p></div>
-              <button 
+              <button
                 onClick={() => setShowPasswordModal(true)}
                 className="px-4 py-2 border border-primary text-primary text-xs font-bold rounded-lg hover:bg-primary/10"
               >
@@ -296,7 +339,7 @@ const Settings: React.FC = () => {
             </div>
             <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-slate-800 rounded-lg">
               <div className="flex flex-col"><p className="text-sm font-bold">Autenticação em 2 Fatores</p><p className={`text-xs font-medium ${security.mfaEnabled ? 'text-green-600' : 'text-gray-500'}`}>{security.mfaEnabled ? 'Ativo (SMS)' : 'Inativo'}</p></div>
-              <div 
+              <div
                 className={`w-10 h-6 rounded-full relative shadow-inner cursor-pointer ${security.mfaEnabled ? 'bg-primary' : 'bg-gray-200 dark:bg-gray-700'}`}
                 onClick={toggleMFA}
               >
@@ -307,10 +350,46 @@ const Settings: React.FC = () => {
         </section>
       </div>
 
+      <section className="bg-white dark:bg-slate-900 p-8 rounded-xl border border-gray-200 dark:border-gray-800 shadow-sm space-y-8">
+        <div className="flex items-center gap-2 text-primary">
+          <span className="material-symbols-outlined">sync_alt</span>
+          <h2 className="text-xl font-bold tracking-tight">Integrações de Terceiros</h2>
+        </div>
+        <div className="space-y-6">
+          <div className="flex flex-col gap-4 p-6 bg-gray-50 dark:bg-slate-800 rounded-xl border border-gray-100 dark:border-gray-700">
+            <div className="flex items-center gap-3">
+              <div className="size-10 bg-blue-500 rounded-lg flex items-center justify-center text-white font-bold">B</div>
+              <div>
+                <h3 className="text-sm font-bold">Bitrix24 Webhook</h3>
+                <p className="text-xs text-gray-500 text-pretty">Envie tarefas automaticamente para o Bitrix24 ao criá-las no TaskFlow.</p>
+              </div>
+            </div>
+            <div className="flex flex-col gap-2">
+              <label className="text-xs font-bold text-gray-500 uppercase">URL do Webhook</label>
+              <div className="flex gap-2">
+                <input
+                  className="flex-1 bg-white dark:bg-slate-900 border border-gray-200 dark:border-gray-700 rounded-lg p-2.5 text-sm focus:ring-1 focus:ring-primary outline-none"
+                  placeholder="https://sua-empresa.bitrix24.com.br/rest/1/webhook-id/tasks.task.add.json"
+                  value={bitrixWebhook}
+                  onChange={(e) => setBitrixWebhook(e.target.value)}
+                />
+                <button
+                  onClick={handleSaveBitrix}
+                  disabled={saving}
+                  className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-bold hover:opacity-90 disabled:opacity-50 transition-all"
+                >
+                  {saving ? '...' : 'Salvar'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section className="bg-white dark:bg-slate-900 p-8 rounded-xl border border-gray-200 dark:border-gray-800 shadow-sm">
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-2 text-primary"><span className="material-symbols-outlined">devices</span><h2 className="text-xl font-bold">Sessões Ativas</h2></div>
-          <button 
+          <button
             onClick={signOutOthers}
             className="text-sm font-bold text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 px-4 py-2 rounded-lg"
           >

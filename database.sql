@@ -120,3 +120,20 @@ create policy "Sistema pode criar notificações" on public.notifications
 
 create policy "Usuários podem atualizar suas notificações" on public.notifications
   for update using (auth.uid() = user_id);
+
+
+-- 6. Tabela de Integrações (Bitrix24, etc)
+create table public.integrations (
+  id uuid default gen_random_uuid() primary key,
+  user_id uuid references auth.users not null,
+  service_name text not null, -- Ex: 'bitrix24'
+  webhook_url text not null,
+  is_active boolean default true,
+  created_at timestamp with time zone default now(),
+  unique(user_id, service_name)
+);
+
+alter table public.integrations enable row level security;
+
+create policy "Usuários podem gerenciar suas próprias integrações" on public.integrations
+  for all using (auth.uid() = user_id);
