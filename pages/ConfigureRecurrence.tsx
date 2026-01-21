@@ -9,12 +9,12 @@ const ConfigureRecurrence: React.FC = () => {
 
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
-    name: '',
-    description: '',
-    type: 'SEMANAL',
-    schedule_time: '09:00',
-    days_of_week: [1] // Segunda por padrão (Inteiros)
+    days_of_week: [1], // Segunda por padrão (Inteiros)
+    checklist: [] as { title: string; is_completed: boolean }[],
+    deadline_relative: 0 // minutos
   });
+
+  const [newChecklistItem, setNewChecklistItem] = useState('');
 
   // Carregar dados se estiver em modo de edição
   useEffect(() => {
@@ -41,7 +41,9 @@ const ConfigureRecurrence: React.FC = () => {
         description: data.description || '',
         type: data.type,
         schedule_time: data.schedule_time,
-        days_of_week: data.days_of_week || []
+        days_of_week: data.days_of_week || [],
+        checklist: data.checklist || [],
+        deadline_relative: data.deadline_relative || 0
       });
     }
     setLoading(false);
@@ -49,7 +51,7 @@ const ConfigureRecurrence: React.FC = () => {
 
   const handleSubmit = async () => {
     if (!formData.name) return alert('Por favor, dê um nome para a tarefa.');
-    
+
     setLoading(true);
     try {
       const { data: { user } } = await (supabase.auth as any).getUser();
@@ -62,6 +64,8 @@ const ConfigureRecurrence: React.FC = () => {
         type: formData.type,
         schedule_time: formData.schedule_time,
         days_of_week: formData.days_of_week,
+        checklist: formData.checklist,
+        deadline_relative: formData.deadline_relative
       };
 
       let error;
@@ -86,7 +90,7 @@ const ConfigureRecurrence: React.FC = () => {
       }
 
       if (error) throw error;
-      
+
       navigate('/recurring');
     } catch (error: any) {
       alert('Erro ao salvar: ' + error.message);
@@ -98,9 +102,25 @@ const ConfigureRecurrence: React.FC = () => {
   const toggleDay = (day: number) => {
     setFormData(prev => ({
       ...prev,
-      days_of_week: prev.days_of_week.includes(day) 
+      days_of_week: prev.days_of_week.includes(day)
         ? prev.days_of_week.filter(d => d !== day)
         : [...prev.days_of_week, day]
+    }));
+  };
+
+  const addChecklistItem = () => {
+    if (!newChecklistItem.trim()) return;
+    setFormData(prev => ({
+      ...prev,
+      checklist: [...prev.checklist, { title: newChecklistItem.trim(), is_completed: false }]
+    }));
+    setNewChecklistItem('');
+  };
+
+  const removeChecklistItem = (index: number) => {
+    setFormData(prev => ({
+      ...prev,
+      checklist: prev.checklist.filter((_, i) => i !== index)
     }));
   };
 
@@ -131,8 +151,8 @@ const ConfigureRecurrence: React.FC = () => {
             </h3>
             <div className="flex flex-col gap-2">
               <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Nome da Automação</label>
-              <input 
-                className="w-full rounded-lg border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 focus:ring-primary focus:border-primary px-4 py-3" 
+              <input
+                className="w-full rounded-lg border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 focus:ring-primary focus:border-primary px-4 py-3"
                 placeholder="Ex: Backup Semanal, Relatórios..."
                 value={formData.name}
                 onChange={e => setFormData({ ...formData, name: e.target.value })}
@@ -140,8 +160,8 @@ const ConfigureRecurrence: React.FC = () => {
             </div>
             <div className="flex flex-col gap-2">
               <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Descrição (Opcional)</label>
-              <textarea 
-                className="w-full rounded-lg border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 focus:ring-primary focus:border-primary px-4 py-3 min-h-[100px]" 
+              <textarea
+                className="w-full rounded-lg border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 focus:ring-primary focus:border-primary px-4 py-3 min-h-[100px]"
                 placeholder="Explique o que esta automação faz..."
                 value={formData.description}
                 onChange={e => setFormData({ ...formData, description: e.target.value })}
@@ -155,7 +175,7 @@ const ConfigureRecurrence: React.FC = () => {
             </h3>
             <div className="flex p-1 bg-slate-100 dark:bg-slate-900 rounded-xl">
               {['DIÁRIO', 'SEMANAL', 'MENSAL'].map(type => (
-                <button 
+                <button
                   key={type}
                   onClick={() => setFormData({ ...formData, type })}
                   className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${formData.type === type ? 'bg-primary text-white shadow-md' : 'text-slate-500'}`}
@@ -169,8 +189,8 @@ const ConfigureRecurrence: React.FC = () => {
                 <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Selecione os Dias</label>
                 <div className="flex flex-wrap gap-2">
                   {['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map((day, i) => (
-                    <button 
-                      key={i} 
+                    <button
+                      key={i}
                       onClick={() => toggleDay(i)}
                       className={`size-10 rounded-lg flex items-center justify-center font-bold text-sm transition-all ${formData.days_of_week.includes(i) ? 'bg-primary text-white scale-105' : 'bg-slate-100 dark:bg-slate-900 text-slate-400'}`}
                     >
@@ -180,6 +200,40 @@ const ConfigureRecurrence: React.FC = () => {
                 </div>
               </div>
             )}
+          </section>
+
+          <section className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-4">
+            <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+              <span className="material-symbols-outlined text-primary">checklist</span> Checklist Padrão
+            </h3>
+            <div className="flex gap-2">
+              <input
+                className="flex-1 rounded-lg border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-4 py-2 text-sm"
+                placeholder="Adicionar item ao checklist..."
+                value={newChecklistItem}
+                onChange={e => setNewChecklistItem(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && addChecklistItem()}
+              />
+              <button
+                onClick={addChecklistItem}
+                className="bg-primary/10 text-primary p-2 rounded-lg hover:bg-primary/20"
+              >
+                <span className="material-symbols-outlined">add</span>
+              </button>
+            </div>
+            <div className="space-y-2">
+              {formData.checklist.map((item, index) => (
+                <div key={index} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-900 rounded-lg group">
+                  <span className="text-sm">{item.title}</span>
+                  <button
+                    onClick={() => removeChecklistItem(index)}
+                    className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <span className="material-symbols-outlined text-sm">delete</span>
+                  </button>
+                </div>
+              ))}
+            </div>
           </section>
         </div>
 
@@ -191,14 +245,28 @@ const ConfigureRecurrence: React.FC = () => {
             <div className="flex flex-col gap-2">
               <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Horário de Execução</label>
               <div className="relative">
-                <input 
-                  className="w-full rounded-lg border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-4 py-3" 
-                  type="time" 
+                <input
+                  className="w-full rounded-lg border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-4 py-3"
+                  type="time"
                   value={formData.schedule_time}
                   onChange={e => setFormData({ ...formData, schedule_time: e.target.value })}
                 />
                 <span className="material-symbols-outlined absolute right-3 top-3.5 text-slate-400">schedule</span>
               </div>
+            </div>
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Prazo para Conclusão (em horas)</label>
+              <div className="relative">
+                <input
+                  className="w-full rounded-lg border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-4 py-3"
+                  type="number"
+                  min="0"
+                  value={formData.deadline_relative / 60}
+                  onChange={e => setFormData({ ...formData, deadline_relative: Number(e.target.value) * 60 })}
+                />
+                <span className="material-symbols-outlined absolute right-3 top-3.5 text-slate-400">timer</span>
+              </div>
+              <p className="text-[10px] text-slate-400 italic">As tarefas criadas terão um prazo de vencimento baseado neste valor.</p>
             </div>
           </section>
 
@@ -226,8 +294,8 @@ const ConfigureRecurrence: React.FC = () => {
         </div>
         <div className="flex items-center gap-3 w-full sm:w-auto">
           <button onClick={() => navigate('/recurring')} className="px-6 py-2.5 text-sm font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 transition-colors">Cancelar</button>
-          <button 
-            onClick={handleSubmit} 
+          <button
+            onClick={handleSubmit}
             disabled={loading}
             className="px-8 py-2.5 bg-primary text-white rounded-lg text-sm font-bold shadow-lg shadow-primary/20 hover:opacity-90 disabled:opacity-50"
           >

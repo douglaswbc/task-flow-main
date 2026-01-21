@@ -5,7 +5,7 @@ const LogsHistory: React.FC = () => {
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  
+
   // Estados para paginação
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -18,7 +18,7 @@ const LogsHistory: React.FC = () => {
   const fetchLogs = async (pageNumber: number) => {
     try {
       setLoading(true);
-      
+
       // Cálculo do intervalo (ex: pág 1 = 0 a 9, pág 2 = 10 a 19)
       const from = (pageNumber - 1) * itemsPerPage;
       const to = from + itemsPerPage - 1;
@@ -33,7 +33,7 @@ const LogsHistory: React.FC = () => {
       if (error) throw error;
 
       setLogs(data || []);
-      
+
       // Calcula total de páginas
       if (count) {
         setTotalPages(Math.ceil(count / itemsPerPage));
@@ -111,13 +111,13 @@ const LogsHistory: React.FC = () => {
                       </div>
                     </td>
                     <td className="px-6 py-4 text-sm text-slate-500">
-                        {log.execution_date 
-                          ? new Date(log.execution_date).toLocaleString('pt-BR') 
-                          : new Date(log.created_at).toLocaleString('pt-BR')}
+                      {log.execution_date
+                        ? new Date(log.execution_date).toLocaleString('pt-BR')
+                        : new Date(log.created_at).toLocaleString('pt-BR')}
                     </td>
                     <td className="px-6 py-4">
                       <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold ${log.status === 'Sucesso' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400' : 'bg-rose-50 text-rose-700 dark:bg-rose-900/20 dark:text-rose-400'}`}>
-                        <span className={`size-1.5 rounded-full ${log.status === 'Sucesso' ? 'bg-emerald-600' : 'bg-rose-600'}`}></span> 
+                        <span className={`size-1.5 rounded-full ${log.status === 'Sucesso' ? 'bg-emerald-600' : 'bg-rose-600'}`}></span>
                         {log.status}
                       </span>
                       {log.error_message && (
@@ -125,7 +125,12 @@ const LogsHistory: React.FC = () => {
                       )}
                     </td>
                     <td className="px-6 py-4 text-right">
-                       <span className="material-symbols-outlined text-slate-400 cursor-pointer hover:text-primary text-lg">info</span>
+                      <button
+                        onClick={() => log.error_message && alert(`Detalhes do Erro:\n${log.error_message}`)}
+                        className={`material-symbols-outlined ${log.error_message ? 'text-rose-500 cursor-pointer' : 'text-slate-200 cursor-default'} text-lg`}
+                      >
+                        info
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -139,14 +144,14 @@ const LogsHistory: React.FC = () => {
               Página <span className="font-bold text-slate-900 dark:text-white">{page}</span> de <span className="font-bold">{totalPages}</span>
             </p>
             <div className="flex gap-2">
-              <button 
+              <button
                 onClick={handlePrevPage}
                 disabled={page === 1}
                 className="p-1.5 rounded border border-slate-200 dark:border-slate-700 hover:bg-white dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 <span className="material-symbols-outlined text-lg">chevron_left</span>
               </button>
-              <button 
+              <button
                 onClick={handleNextPage}
                 disabled={page >= totalPages}
                 className="p-1.5 rounded border border-slate-200 dark:border-slate-700 hover:bg-white dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"

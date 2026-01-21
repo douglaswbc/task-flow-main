@@ -34,7 +34,7 @@ const RecurringTasks: React.FC = () => {
       .from('recurring_tasks')
       .update({ is_active: !currentStatus })
       .eq('id', id);
-    
+
     if (!error) {
       setTasks(tasks.map(t => t.id === id ? { ...t, is_active: !currentStatus } : t));
     } else {
@@ -115,8 +115,8 @@ const RecurringTasks: React.FC = () => {
               ) : filteredTasks.length === 0 ? (
                 <tr><td colSpan={5} className="py-8 sm:py-10 text-center text-slate-400 italic">Nenhuma recorrência encontrada.</td></tr>
               ) : filteredTasks.map((task) => (
-                <tr 
-                  key={task.id} 
+                <tr
+                  key={task.id}
                   onClick={() => handleEdit(task.id)}
                   className={`hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors group cursor-pointer ${!task.is_active ? 'opacity-60' : ''}`}
                 >
@@ -126,8 +126,13 @@ const RecurringTasks: React.FC = () => {
                         <span className="material-symbols-outlined text-lg">sync</span>
                       </div>
                       <div>
-                        <p className="text-sm font-bold text-slate-900 dark:text-white">{task.name}</p>
-                        <p className="text-xs text-slate-500">{task.team || 'Geral'}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-bold text-slate-900 dark:text-white">{task.name}</p>
+                          {task.checklist && task.checklist.length > 0 && (
+                            <span className="material-symbols-outlined text-xs text-primary" title={`${task.checklist.length} itens no checklist`}>checklist</span>
+                          )}
+                        </div>
+                        <p className="text-xs text-slate-500">{task.description || 'Sem descrição'}</p>
                       </div>
                     </div>
                   </td>
@@ -136,6 +141,9 @@ const RecurringTasks: React.FC = () => {
                   </td>
                   <td className="py-4 sm:py-5 px-4 sm:px-6">
                     <p className="text-sm font-medium dark:text-gray-200">{task.schedule_time.slice(0, 5)}</p>
+                    {task.deadline_relative > 0 && (
+                      <p className="text-[10px] text-slate-400">Prazo: +{task.deadline_relative / 60}h</p>
+                    )}
                   </td>
                   <td className="py-4 sm:py-5 px-4 sm:px-6">
                     <div className={`flex items-center gap-2 ${task.is_active ? 'text-primary' : 'text-slate-400'}`}>
@@ -145,11 +153,11 @@ const RecurringTasks: React.FC = () => {
                   </td>
                   <td className="py-4 sm:py-5 px-4 sm:px-6">
                     <div className="flex items-center justify-end gap-2 sm:gap-4">
-                      <div 
-                        className="relative inline-flex items-center cursor-pointer" 
-                        onClick={(e) => { 
-                          e.stopPropagation(); 
-                          toggleStatus(task.id, task.is_active); 
+                      <div
+                        className="relative inline-flex items-center cursor-pointer"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleStatus(task.id, task.is_active);
                         }}
                       >
                         <div className={`w-9 h-5 rounded-full transition-all ${task.is_active ? 'bg-primary' : 'bg-gray-200 dark:bg-gray-700'}`}>
@@ -157,9 +165,9 @@ const RecurringTasks: React.FC = () => {
                         </div>
                       </div>
 
-                      <button 
+                      <button
                         onClick={(e) => {
-                          e.stopPropagation(); 
+                          e.stopPropagation();
                           handleDelete(task.id);
                         }}
                         className="opacity-0 group-hover:opacity-100 p-1.5 text-slate-400 hover:text-red-500 transition-all"

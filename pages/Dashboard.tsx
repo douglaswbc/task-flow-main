@@ -7,8 +7,8 @@ const Dashboard: React.FC = () => {
   const [stats, setStats] = useState([
     { label: 'Tarefas Pendentes', value: '0', change: '...', color: 'blue', icon: 'pending_actions' },
     { label: 'Tarefas Concluídas', value: '0', change: '...', color: 'emerald', icon: 'task_alt' },
-    { label: 'Recorrências Ativas', value: '0', change: '...', color: 'orange', icon: 'sync' },
-    { label: 'Logs de Hoje', value: '0', change: '...', color: 'purple', icon: 'smart_toy' },
+    { label: 'Recorrências Ativas', value: '0', change: 'Automação', color: 'orange', icon: 'sync' },
+    { label: 'Sincronização Bitrix', value: '0%', change: 'Saúde', color: 'indigo', icon: 'hub' },
   ]);
   const [automations, setAutomations] = useState<any[]>([]);
   const [userName, setUserName] = useState('usuário');
@@ -23,7 +23,7 @@ const Dashboard: React.FC = () => {
       setLoading(true);
       const { data: { user } } = await (supabase.auth as any).getUser();
       if (!user) return;
-      
+
       setUserName(user.user_metadata?.full_name?.split(' ')[0] || 'usuário');
 
       // Buscar contagens reais
@@ -32,14 +32,18 @@ const Dashboard: React.FC = () => {
         supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('status', 'PENDING'),
         supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('status', 'COMPLETED'),
         supabase.from('recurring_tasks').select('*', { count: 'exact', head: true }).eq('is_active', true),
-        supabase.from('automation_logs').select('*', { count: 'exact', head: true }) // Logs gerais
+        supabase.from('automation_logs').select('status', { count: 'exact' }) // Pegar todos os logs para calcular %
       ]);
+
+      const totalLogs = logs.data?.length || 0;
+      const successLogs = logs.data?.filter(l => l.status === 'Sucesso').length || 0;
+      const syncRate = totalLogs > 0 ? Math.round((successLogs / totalLogs) * 100) : 100;
 
       setStats([
         { label: 'Tarefas Pendentes', value: String(pending.count || 0), change: 'Tempo Real', color: 'blue', icon: 'pending_actions' },
         { label: 'Tarefas Concluídas', value: String(completed.count || 0), change: 'Total', color: 'emerald', icon: 'task_alt' },
         { label: 'Recorrências Ativas', value: String(recurring.count || 0), change: 'Automação', color: 'orange', icon: 'sync' },
-        { label: 'Execuções Totais', value: String(logs.count || 0), change: 'Logs', color: 'purple', icon: 'smart_toy' },
+        { label: 'Sincronização Bitrix', value: `${syncRate}%`, change: 'Saúde', color: 'indigo', icon: 'hub' },
       ]);
 
       // Buscar próximas recorrências da tabela correta 'recurring_tasks'
@@ -48,7 +52,7 @@ const Dashboard: React.FC = () => {
         .select('*')
         .order('next_run', { ascending: true }) // Ordena pela próxima execução
         .limit(4);
-      
+
       if (recurringData) setAutomations(recurringData);
 
     } catch (error) {
@@ -66,8 +70,8 @@ const Dashboard: React.FC = () => {
             {loading ? 'Carregando visão geral...' : `Bem-vindo de volta, ${userName}.`}
           </h3>
           <p className="text-slate-500 text-sm mt-1">
-            {stats[0].value === '0' 
-              ? 'Tudo em dia por aqui! Nenhuma tarefa pendente no momento.' 
+            {stats[0].value === '0'
+              ? 'Tudo em dia por aqui! Nenhuma tarefa pendente no momento.'
               : `Você tem ${stats[0].value} tarefas pendentes que requerem sua atenção.`}
           </p>
         </div>
