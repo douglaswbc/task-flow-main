@@ -7,10 +7,31 @@ const RecurringTasks: React.FC = () => {
   const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [bitrixUsers, setBitrixUsers] = useState<{ id: string; name: string; work_position: string }[]>([]);
 
   useEffect(() => {
     fetchRecurringTasks();
+    fetchBitrixUsers();
   }, []);
+
+  const fetchBitrixUsers = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const response = await fetch('https://fkpxmqjvtrqzvcfhlcru.supabase.co/functions/v1/bitrix-users', {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setBitrixUsers(data);
+      }
+    } catch (error) {
+      console.error('Erro ao buscar usuários do Bitrix:', error);
+    }
+  };
 
   const fetchRecurringTasks = async () => {
     try {
@@ -65,9 +86,14 @@ const RecurringTasks: React.FC = () => {
   };
 
   const filteredTasks = tasks.filter(task =>
-    task.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     task.type.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const getResponsibleName = (id: string | null) => {
+    if (!id) return 'Não definido';
+    const user = bitrixUsers.find(u => u.id === id);
+    return user ? user.name : 'ID: ' + id;
+  };
 
   return (
     <div className="max-w-6xl mx-auto space-y-8 px-4 sm:px-6 lg:px-8">
@@ -105,6 +131,7 @@ const RecurringTasks: React.FC = () => {
                 <th className="py-3 px-4 sm:py-4 sm:px-6 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Nome da Tarefa</th>
                 <th className="py-3 px-4 sm:py-4 sm:px-6 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-center">Frequência</th>
                 <th className="py-3 px-4 sm:py-4 sm:px-6 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Horário</th>
+                <th className="py-3 px-4 sm:py-4 sm:px-6 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Responsável</th>
                 <th className="py-3 px-4 sm:py-4 sm:px-6 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Próxima Execução</th>
                 <th className="py-3 px-4 sm:py-4 sm:px-6 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-right">Status</th>
               </tr>
@@ -144,6 +171,12 @@ const RecurringTasks: React.FC = () => {
                     {task.deadline_relative > 0 && (
                       <p className="text-[10px] text-slate-400">Prazo: +{task.deadline_relative / 60}h</p>
                     )}
+                  </td>
+                  <td className="py-4 sm:py-5 px-4 sm:px-6">
+                    <div className="flex items-center gap-2 text-slate-600 dark:text-slate-300">
+                      <span className="material-symbols-outlined text-sm">person</span>
+                      <p className="text-sm font-medium">{getResponsibleName(task.responsible_id)}</p>
+                    </div>
                   </td>
                   <td className="py-4 sm:py-5 px-4 sm:px-6">
                     <div className={`flex items-center gap-2 ${task.is_active ? 'text-primary' : 'text-slate-400'}`}>

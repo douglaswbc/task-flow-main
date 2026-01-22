@@ -261,6 +261,12 @@ const Tasks: React.FC = () => {
     }
   };
 
+  const getResponsibleName = (id: string | null) => {
+    if (!id) return null;
+    const user = bitrixUsers.find(u => u.id === id);
+    return user ? user.name : 'ID: ' + id;
+  };
+
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('pt-BR', {
       day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'
@@ -367,9 +373,17 @@ const Tasks: React.FC = () => {
                 <td className="px-6 py-4 text-sm text-slate-500">{formatDate(task.created_at)}</td>
 
                 <td className="px-6 py-4">
-                  <div className={`flex items-center gap-1.5 text-xs font-bold ${task.origin === 'Recorrente' ? 'text-primary' : 'text-slate-500'}`}>
-                    <span className="material-symbols-outlined text-sm">{task.origin === 'Recorrente' ? 'sync' : 'person'}</span>
-                    {task.origin}
+                  <div className="flex flex-col gap-1">
+                    <div className={`flex items-center gap-1.5 text-xs font-bold ${task.origin === 'Recorrente' ? 'text-primary' : 'text-slate-500'}`}>
+                      <span className="material-symbols-outlined text-sm">{task.origin === 'Recorrente' ? 'sync' : 'person'}</span>
+                      {task.origin}
+                    </div>
+                    {task.responsible_id && (
+                      <div className="flex items-center gap-1 text-[10px] text-slate-400">
+                        <span className="material-symbols-outlined text-[12px]">account_circle</span>
+                        <span className="truncate max-w-[100px]">{getResponsibleName(task.responsible_id)}</span>
+                      </div>
+                    )}
                   </div>
                 </td>
 

@@ -83,49 +83,49 @@ const ConfigureRecurrence: React.FC = () => {
   };
 
   const handleSubmit = async () => {
-    if (!formData.name) return alert('Por favor, dê um nome para a tarefa.');
+    if (!formData.name.trim()) return alert('O nome da automação é obrigatório.');
+    if (!formData.next_run) return alert('A próxima execução é obrigatória para definir o horário padrão.');
 
     setLoading(true);
     try {
       const { data: { user } } = await (supabase.auth as any).getUser();
       if (!user) return alert('Você precisa estar logado.');
 
-      // Objeto base dos dados
-      const taskData = {
+      const nextRunDate = new Date(formData.next_run);
+      const scheduleTime = `${nextRunDate.getHours().toString().padStart(2, '0')}:${nextRunDate.getMinutes().toString().padStart(2, '0')}`;
+
+      const payload = {
         name: formData.name,
         description: formData.description,
         type: formData.type,
-        schedule_time: formData.schedule_time,
+        schedule_time: scheduleTime,
         days_of_week: formData.days_of_week,
         checklist: formData.checklist,
         deadline_relative: formData.deadline_relative,
         responsible_id: formData.responsible_id,
-        next_run: formData.next_run ? new Date(formData.next_run).toISOString() : null
+        next_run: nextRunDate.toISOString()
       };
 
       let error;
 
       if (editingId) {
-        // MODO EDIÇÃO: Atualiza (Update)
         const { error: updateError } = await supabase
           .from('recurring_tasks')
-          .update(taskData) // Não atualizamos user_id nem is_active aqui para manter estado
+          .update(payload)
           .eq('id', editingId);
         error = updateError;
       } else {
-        // MODO CRIAÇÃO: Insere (Insert)
         const { error: insertError } = await supabase
           .from('recurring_tasks')
           .insert({
-            ...taskData,
+            ...payload,
             user_id: user.id,
-            is_active: true // Padrão ativo ao criar
+            is_active: true
           });
         error = insertError;
       }
 
       if (error) throw error;
-
       navigate('/recurring');
     } catch (error: any) {
       alert('Erro ao salvar: ' + error.message);
@@ -277,18 +277,6 @@ const ConfigureRecurrence: React.FC = () => {
             <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
               <span className="material-symbols-outlined text-primary">schedule</span> Agendamento
             </h3>
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Horário de Execução</label>
-              <div className="relative">
-                <input
-                  className="w-full rounded-lg border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-4 py-3"
-                  type="time"
-                  value={formData.schedule_time}
-                  onChange={e => setFormData({ ...formData, schedule_time: e.target.value })}
-                />
-                <span className="material-symbols-outlined absolute right-3 top-3.5 text-slate-400">schedule</span>
-              </div>
-            </div>
 
             <div className="flex flex-col gap-2">
               <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Responsável no Bitrix24</label>
@@ -323,6 +311,7 @@ const ConfigureRecurrence: React.FC = () => {
               </div>
               <p className="text-[10px] text-slate-400 italic">Defina manualmente quando esta tarefa deve ser executada pela primeira vez ou na próxima vez.</p>
             </div>
+
             <div className="flex flex-col gap-2">
               <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Prazo para Conclusão (em horas)</label>
               <div className="relative">
@@ -345,7 +334,7 @@ const ConfigureRecurrence: React.FC = () => {
               <div className="size-12 rounded-full bg-primary/20 flex items-center justify-center text-primary shrink-0"><span className="material-symbols-outlined">auto_awesome</span></div>
               <div className="space-y-2">
                 <p className="text-base font-semibold leading-snug">
-                  "Sua tarefa <span className="text-primary font-bold">{formData.name || 'Sem Nome'}</span> será {editingId ? 'atualizada' : 'criada'} conforme a agenda."
+                  \"Sua tarefa <span className="text-primary font-bold">{formData.name || 'Sem Nome'}</span> será {editingId ? 'atualizada' : 'criada'} conforme a agenda.\"
                 </p>
                 <p className="text-xs text-slate-500 italic">
                   {editingId ? 'As alterações entrarão em vigor imediatamente.' : 'O sistema irá calcular a próxima execução assim que você salvar.'}
