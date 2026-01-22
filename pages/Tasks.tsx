@@ -16,8 +16,9 @@ interface Task {
   status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'BACKLOG';
   origin: 'Manual' | 'Recorrente';
   is_high_priority: boolean;
-  deadline: string | null;          // Novo campo
-  checklist: ChecklistItem[] | null; // Novo campo
+  deadline: string | null;
+  checklist: ChecklistItem[] | null;
+  responsible_id: string | null;
   created_at: string;
 }
 
@@ -38,6 +39,7 @@ const Tasks: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [saving, setSaving] = useState(false);
+  const [bitrixUsers, setBitrixUsers] = useState<{ id: string; name: string; work_position: string }[]>([]);
 
   // Estado do formulário incluindo novos campos
   const [formData, setFormData] = useState({
@@ -46,7 +48,8 @@ const Tasks: React.FC = () => {
     status: 'PENDING' as Task['status'],
     is_high_priority: false,
     deadline: '',
-    checklist: [] as ChecklistItem[]
+    checklist: [] as ChecklistItem[],
+    responsible_id: ''
   });
 
   // Estado auxiliar para adicionar itens na checklist
@@ -54,7 +57,27 @@ const Tasks: React.FC = () => {
 
   useEffect(() => {
     fetchTasks();
+    fetchBitrixUsers();
   }, []);
+
+  const fetchBitrixUsers = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const response = await fetch('https://fkpxmqjvtrqzvcfhlcru.supabase.co/functions/v1/bitrix-users', {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setBitrixUsers(data);
+      }
+    } catch (error) {
+      console.error('Erro ao buscar usuários do Bitrix:', error);
+    }
+  };
 
   const fetchTasks = async () => {
     try {
@@ -106,7 +129,8 @@ const Tasks: React.FC = () => {
       status: 'PENDING',
       is_high_priority: false,
       deadline: '',
-      checklist: []
+      checklist: [],
+      responsible_id: ''
     });
     setNewChecklistItem('');
     setIsModalOpen(true);
@@ -125,7 +149,8 @@ const Tasks: React.FC = () => {
         const pad = (n: number) => n.toString().padStart(2, '0');
         return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
       })() : '',
-      checklist: task.checklist || []
+      checklist: task.checklist || [],
+      responsible_id: task.responsible_id || ''
     });
     setNewChecklistItem('');
     setIsModalOpen(true);
@@ -153,7 +178,8 @@ const Tasks: React.FC = () => {
         is_high_priority: formData.is_high_priority,
         origin: editingTask ? editingTask.origin : 'Manual',
         deadline: formData.deadline ? new Date(formData.deadline).toISOString() : null,
-        checklist: formData.checklist // Supabase serializa JSONB automaticamente
+        checklist: formData.checklist, // Supabase serializa JSONB automaticamente
+        responsible_id: formData.responsible_id || null
       };
 
       let error;
@@ -439,6 +465,26 @@ const Tasks: React.FC = () => {
                       </select>
                       <span className="material-symbols-outlined absolute right-3 top-2.5 text-slate-400 pointer-events-none text-lg">expand_more</span>
                     </div>
+                  </div>
+                </div>
+
+                {/* Responsável no Bitrix24 */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Responsável no Bitrix24</label>
+                  <div className="relative">
+                    <select
+                      className="w-full px-4 py-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none appearance-none"
+                      value={formData.responsible_id}
+                      onChange={(e) => setFormData({ ...formData, responsible_id: e.target.value })}
+                    >
+                      <option value="">Selecione um responsável...</option>
+                      {bitrixUsers.map(user => (
+                        <option key={user.id} value={user.id}>
+                          {user.name} {user.work_position ? `(${user.work_position})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="material-symbols-outlined absolute right-3 top-2.5 text-slate-400 pointer-events-none text-lg">person</span>
                   </div>
                 </div>
 

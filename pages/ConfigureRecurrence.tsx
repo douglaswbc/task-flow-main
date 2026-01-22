@@ -8,20 +8,47 @@ const ConfigureRecurrence: React.FC = () => {
   const editingId = searchParams.get('id'); // Pega o ID da URL se existir
 
   const [loading, setLoading] = useState(false);
+  const [bitrixUsers, setBitrixUsers] = useState<{ id: string; name: string; work_position: string }[]>([]);
   const [formData, setFormData] = useState({
+    name: '',
+    description: '',
+    type: 'DIÁRIO',
+    schedule_time: '09:00',
     days_of_week: [1], // Segunda por padrão (Inteiros)
     checklist: [] as { title: string; is_completed: boolean }[],
-    deadline_relative: 0 // minutos
+    deadline_relative: 0, // minutos
+    next_run: '', // ISO string
+    responsible_id: ''
   });
 
   const [newChecklistItem, setNewChecklistItem] = useState('');
 
   // Carregar dados se estiver em modo de edição
   useEffect(() => {
+    fetchBitrixUsers();
     if (editingId) {
       loadAutomationData(editingId);
     }
   }, [editingId]);
+
+  const fetchBitrixUsers = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const response = await fetch('https://fkpxmqjvtrqzvcfhlcru.supabase.co/functions/v1/bitrix-users', {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setBitrixUsers(data);
+      }
+    } catch (error) {
+      console.error('Erro ao buscar usuários do Bitrix:', error);
+    }
+  };
 
   const loadAutomationData = async (id: string) => {
     setLoading(true);
@@ -43,7 +70,13 @@ const ConfigureRecurrence: React.FC = () => {
         schedule_time: data.schedule_time,
         days_of_week: data.days_of_week || [],
         checklist: data.checklist || [],
-        deadline_relative: data.deadline_relative || 0
+        deadline_relative: data.deadline_relative || 0,
+        responsible_id: data.responsible_id || '',
+        next_run: data.next_run ? (() => {
+          const d = new Date(data.next_run);
+          const pad = (n: number) => n.toString().padStart(2, '0');
+          return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        })() : ''
       });
     }
     setLoading(false);
@@ -65,7 +98,9 @@ const ConfigureRecurrence: React.FC = () => {
         schedule_time: formData.schedule_time,
         days_of_week: formData.days_of_week,
         checklist: formData.checklist,
-        deadline_relative: formData.deadline_relative
+        deadline_relative: formData.deadline_relative,
+        responsible_id: formData.responsible_id,
+        next_run: formData.next_run ? new Date(formData.next_run).toISOString() : null
       };
 
       let error;
@@ -253,6 +288,40 @@ const ConfigureRecurrence: React.FC = () => {
                 />
                 <span className="material-symbols-outlined absolute right-3 top-3.5 text-slate-400">schedule</span>
               </div>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Responsável no Bitrix24</label>
+              <div className="relative">
+                <select
+                  className="w-full rounded-lg border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-4 py-3 appearance-none"
+                  value={formData.responsible_id}
+                  onChange={e => setFormData({ ...formData, responsible_id: e.target.value })}
+                >
+                  <option value="">Selecione um responsável...</option>
+                  {bitrixUsers.map(user => (
+                    <option key={user.id} value={user.id}>
+                      {user.name} {user.work_position ? `(${user.work_position})` : ''}
+                    </option>
+                  ))}
+                </select>
+                <span className="material-symbols-outlined absolute right-3 top-3.5 text-slate-400 pointer-events-none">person</span>
+              </div>
+              <p className="text-[10px] text-slate-400 italic">Este usuário será definido como o responsável pela tarefa no Bitrix24.</p>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Próxima Execução (Opcional)</label>
+              <div className="relative">
+                <input
+                  className="w-full rounded-lg border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-4 py-3"
+                  type="datetime-local"
+                  value={formData.next_run}
+                  onChange={e => setFormData({ ...formData, next_run: e.target.value })}
+                />
+                <span className="material-symbols-outlined absolute right-3 top-3.5 text-slate-400">calendar_month</span>
+              </div>
+              <p className="text-[10px] text-slate-400 italic">Defina manualmente quando esta tarefa deve ser executada pela primeira vez ou na próxima vez.</p>
             </div>
             <div className="flex flex-col gap-2">
               <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Prazo para Conclusão (em horas)</label>
