@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { useLocation } from 'react-router-dom';
 
 // Tipagem para os itens da Checklist
 interface ChecklistItem {
@@ -34,6 +35,8 @@ const Tasks: React.FC = () => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
+  const [searchTerm, setSearchTerm] = useState('');
+  const location = useLocation();
 
   // Estados do Modal e Formulário
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -58,7 +61,11 @@ const Tasks: React.FC = () => {
   useEffect(() => {
     fetchTasks();
     fetchBitrixUsers();
-  }, []);
+
+    if (location.state?.searchTerm) {
+      setSearchTerm(location.state.searchTerm);
+    }
+  }, [location.state]);
 
   const fetchBitrixUsers = async () => {
     try {
@@ -96,6 +103,11 @@ const Tasks: React.FC = () => {
       setLoading(false);
     }
   };
+
+  const filteredTasks = tasks.filter(task =>
+    task.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (task.description && task.description.toLowerCase().includes(searchTerm.toLowerCase()))
+  );
 
 
   // --- AÇÕES DO FORMULÁRIO (CHECKLIST) ---
@@ -313,9 +325,9 @@ const Tasks: React.FC = () => {
           <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
             {loading ? (
               <tr><td colSpan={7} className="px-6 py-10 text-center text-slate-400">Carregando tarefas...</td></tr>
-            ) : tasks.length === 0 ? (
+            ) : filteredTasks.length === 0 ? (
               <tr><td colSpan={7} className="px-6 py-10 text-center text-slate-400 italic">Nenhuma tarefa encontrada.</td></tr>
-            ) : tasks.map((task) => (
+            ) : filteredTasks.map((task) => (
               <tr key={task.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors group">
                 <td className="px-6 py-4"><input className="rounded border-slate-300 text-primary focus:ring-primary" type="checkbox" /></td>
 

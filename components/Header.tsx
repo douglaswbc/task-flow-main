@@ -35,9 +35,29 @@ const Header: React.FC = () => {
   // Buscar notificações
   useEffect(() => {
     fetchNotifications();
-    // Polling para novas notificações a cada 30 segundos
-    const interval = setInterval(fetchNotifications, 30000);
-    return () => clearInterval(interval);
+
+    // Inscrição Realtime para novas notificações
+    const channel = supabase
+      .channel('public:notifications')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'notifications',
+        },
+        (payload) => {
+          // Adiciona a nova notificação ao início da lista
+          const newNotif = payload.new as Notification;
+          setNotifications(prev => [newNotif, ...prev].slice(0, 10));
+          setUnreadCount(prev => prev + 1);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const fetchNotifications = async () => {
@@ -53,8 +73,7 @@ const Header: React.FC = () => {
         .limit(10);
 
       if (error) {
-        // Se a tabela não existir, não quebra a aplicação, apenas loga
-        console.warn('Tabela de notificações não encontrada ou erro ao buscar.');
+        console.warn('Erro ao buscar notificações:', error.message);
         return;
       }
 
@@ -200,9 +219,8 @@ const Header: React.FC = () => {
                   notifications.map((notification) => (
                     <div
                       key={notification.id}
-                      className={`p-4 border-b border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer ${
-                        !notification.read ? 'bg-blue-50 dark:bg-blue-900/20' : ''
-                      }`}
+                      className={`p-4 border-b border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer ${!notification.read ? 'bg-blue-50 dark:bg-blue-900/20' : ''
+                        }`}
                       onClick={() => {
                         if (!notification.read) markAsRead(notification.id);
                         if (notification.task_id) {

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 const RecurringTasks: React.FC = () => {
   const navigate = useNavigate();
@@ -8,11 +8,16 @@ const RecurringTasks: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [bitrixUsers, setBitrixUsers] = useState<{ id: string; name: string; work_position: string }[]>([]);
+  const location = useLocation();
 
   useEffect(() => {
     fetchRecurringTasks();
     fetchBitrixUsers();
-  }, []);
+
+    if (location.state?.searchTerm) {
+      setSearchTerm(location.state.searchTerm);
+    }
+  }, [location.state]);
 
   const fetchBitrixUsers = async () => {
     try {
@@ -86,7 +91,8 @@ const RecurringTasks: React.FC = () => {
   };
 
   const filteredTasks = tasks.filter(task =>
-    task.type.toLowerCase().includes(searchTerm.toLowerCase())
+    task.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (task.description && task.description.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
   const getResponsibleName = (id: string | null) => {

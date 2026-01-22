@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { useLocation } from 'react-router-dom';
 
 const LogsHistory: React.FC = () => {
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const location = useLocation();
 
   // Estados para paginação
   const [page, setPage] = useState(1);
@@ -13,7 +15,11 @@ const LogsHistory: React.FC = () => {
 
   useEffect(() => {
     fetchLogs(page);
-  }, [page]); // Recarrega sempre que a página mudar
+
+    if (location.state?.searchTerm) {
+      setSearchTerm(location.state.searchTerm);
+    }
+  }, [page, location.state]); // Recarrega sempre que a página ou o termo mudar
 
   const fetchLogs = async (pageNumber: number) => {
     try {
@@ -49,14 +55,16 @@ const LogsHistory: React.FC = () => {
     if (page < totalPages) setPage(prev => prev + 1);
   };
 
+  const filteredLogsList = logs.filter(log =>
+    (log.task_name && log.task_name.toLowerCase().includes(searchTerm.toLowerCase())) ||
+    (log.error_message && log.error_message.toLowerCase().includes(searchTerm.toLowerCase()))
+  );
+
   const handlePrevPage = () => {
     if (page > 1) setPage(prev => prev - 1);
   };
 
-  const filteredLogs = logs.filter(log =>
-    log.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    log.status?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredLogs = filteredLogsList;
 
   return (
     <div className="flex flex-col lg:flex-row gap-6 lg:gap-8 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
