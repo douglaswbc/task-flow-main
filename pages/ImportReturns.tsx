@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx'; // Requer: npm install xlsx
 import { supabase } from '../lib/supabase';
 
-// --- CONFIGURAÇÃO ---
+// --- CONFIGURAÇÃO (Mantida) ---
 const BITRIX_FIELD_MAP = {
     OPPORTUNITY: 'Quantia de Reembolso',
     CURRENCY_ID: 'Moeda',
@@ -55,7 +55,7 @@ const ImportReturns: React.FC = () => {
     const [webhookUrl, setWebhookUrl] = useState<string | null>(null);
     const [verifyingCode, setVerifyingCode] = useState(false);
 
-    // --- FORÇA O MODAL A APARECER AO CARREGAR ---
+    // Força o modal
     useEffect(() => {
         if (!webhookUrl) {
             setShowAccessModal(true);
@@ -135,38 +135,24 @@ const ImportReturns: React.FC = () => {
         return 0;
     };
 
-    // --- NORMALIZAÇÃO INTELIGENTE DE LISTAS (Case Insensitive) ---
-    // Resolve o problema de não adicionar valor se estiver minúsculo na planilha
     const getListValue = (category: string, value: any) => {
         if (!value) return '';
         const map = LIST_VALUES_MAP[category];
         if (!map) return value;
-
-        // 1. Tenta correspondência exata
-        if (map[value]) return map[value];
-
-        // 2. Tenta correspondência ignorando maiúsculas/minúsculas
         const valStr = String(value).trim().toLowerCase();
         const foundKey = Object.keys(map).find(k => k.toLowerCase() === valStr);
-
         return foundKey ? map[foundKey] : value;
     };
 
     const addLog = (msg: string) => setLogs(p => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...p]);
 
-    // --- VERIFICAÇÃO DO CÓDIGO (Normalizada para Minúsculo) ---
     const verifyAccessCode = async () => {
-        // Converte para MINÚSCULO para bater com o banco de dados
         const normalizedCode = accessCode.trim().toLowerCase();
-
         if (!normalizedCode) return alert("Digite o código.");
         setVerifyingCode(true);
-
         try {
             const { data, error } = await supabase.rpc('get_webhook_by_code', { code_input: normalizedCode });
-
             if (error) throw error;
-
             if (data) {
                 setWebhookUrl(data);
                 setShowAccessModal(false);
@@ -183,7 +169,28 @@ const ImportReturns: React.FC = () => {
         }
     };
 
-    // --- PROCESSAMENTO ---
+    // --- FUNÇÃO PARA VERIFICAR DUPLICIDADE ---
+    const checkDealExists = async (title: string, listUrl: string): Promise<string | false> => {
+        try {
+            const res = await fetch(listUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    filter: { "TITLE": title }, // Busca exata pelo título
+                    select: ["ID"]
+                })
+            });
+            const data = await res.json();
+            if (data.result && data.result.length > 0) {
+                return data.result[0].ID; // Retorna o ID se existir
+            }
+            return false;
+        } catch (error) {
+            console.error("Erro ao verificar duplicidade", error);
+            return false; // Em caso de erro de rede, assume que não existe para tentar criar (ou poderia bloquear)
+        }
+    };
+
     const handleStartProcess = () => {
         if (!file) return alert('Selecione um arquivo.');
         if (!webhookUrl) {
@@ -213,25 +220,27 @@ const ImportReturns: React.FC = () => {
 
             if (!data || data.length === 0) throw new Error("Arquivo vazio.");
 
-            addLog(`🔍 ${data.length} registros encontrados. Iniciando envio...`);
+            addLog(`🔍 ${data.length} registros encontrados. Verificando duplicidades e importando...`);
 
-            let dealUrl = webhookUrl.replace(/\/tasks\.task\.add.*/, '').replace(/\/user\.get.*/, '').replace(/\/$/, '');
-            if (!dealUrl.endsWith('/crm.deal.add')) dealUrl += '/crm.deal.add';
-            const commentUrl = dealUrl.replace('crm.deal.add', 'crm.timeline.comment.add');
+            // Prepara URLs
+            // Remove métodos antigos para ter a base
+            const baseApiUrl = webhookUrl.replace(/\/tasks\.task\.add.*/, '').replace(/\/user\.get.*/, '').replace(/\/$/, '');
+
+            const dealAddUrl = `${baseApiUrl}/crm.deal.add`;
+            const dealListUrl = `${baseApiUrl}/crm.deal.list`; // URL para verificar duplicidade
+            const commentUrl = `${baseApiUrl}/crm.timeline.comment.add`;
 
             let success = 0;
             let errors = 0;
+            let skipped = 0;
 
             for (let i = 0; i < data.length; i++) {
                 const row = data[i];
 
-                // Helper de busca inteligente (Case Insensitive nas colunas)
                 const getVal = (keys: string[]) => {
                     const rowKeys = Object.keys(row);
                     for (const k of keys) {
-                        // Tenta exato
                         if (row[k] !== undefined) return row[k];
-                        // Tenta aproximado (ignore case)
                         const foundKey = rowKeys.find(rk => rk.toLowerCase().trim() === k.toLowerCase().trim());
                         if (foundKey && row[foundKey] !== undefined) return row[foundKey];
                     }
@@ -243,18 +252,30 @@ const ImportReturns: React.FC = () => {
 
                 if (!orderId) continue;
 
+                // --- 1. Título e Duplicidade ---
+                const finalTitle = orderId;
+
+                // Verifica se já existe antes de criar
+                const existingId = await checkDealExists(finalTitle, dealListUrl);
+
+                if (existingId) {
+                    addLog(`⚠️ [${orderId}] Ignorado: Já existe no Bitrix (ID: ${existingId})`);
+                    skipped++;
+                    setProgress(Math.round(((i + 1) / data.length) * 100));
+                    continue; // Pula para o próximo
+                }
+
+                // --- 2. Cálculo do Prazo (Deadline) ---
                 const returnDateRaw = getVal(['Tempo de Devolução', 'Tempo_de_Devolucao', 'Data da coleta']);
                 const returnDate = parseDate(returnDateRaw);
                 const deadline = new Date(returnDate);
-                deadline.setDate(deadline.getDate() + 15);
-
-                const finalTitle = orderId;
+                deadline.setDate(deadline.getDate() + 15); // ADICIONA 15 DIAS
 
                 const fields: any = {
                     TITLE: finalTitle,
                     OPPORTUNITY: parseMoney(getVal(['Quantia de Reembolso', 'Quantia_de_Reembolso'])),
                     CURRENCY_ID: 'BRL',
-                    CLOSEDATE: deadline.toISOString(),
+                    CLOSEDATE: deadline.toISOString(), // Envia o prazo calculado
                     CATEGORY_ID: 3,
                     OPENED: 'Y',
                     ASSIGNED_BY_ID: 1,
@@ -280,7 +301,7 @@ const ImportReturns: React.FC = () => {
                 };
 
                 try {
-                    const res = await fetch(dealUrl, {
+                    const res = await fetch(dealAddUrl, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ fields })
@@ -289,7 +310,7 @@ const ImportReturns: React.FC = () => {
 
                     if (json.result) {
                         success++;
-                        addLog(`✅ [${orderId}] Sucesso! ID: ${json.result}`);
+                        addLog(`✅ [${orderId}] Criado com prazo para ${deadline.toLocaleDateString()}! ID: ${json.result}`);
                         await fetch(commentUrl, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
@@ -305,10 +326,11 @@ const ImportReturns: React.FC = () => {
                 }
 
                 setProgress(Math.round(((i + 1) / data.length) * 100));
-                if (i % 5 === 0) await new Promise(r => setTimeout(r, 10));
+                // Pequeno delay para não sobrecarregar a API na verificação + criação
+                if (i % 5 === 0) await new Promise(r => setTimeout(r, 200));
             }
 
-            alert(`Importação Concluída!\nSucessos: ${success}\nErros: ${errors}`);
+            alert(`Concluído!\nNovos: ${success}\nIgnorados (Já existiam): ${skipped}\nErros: ${errors}`);
 
         } catch (error: any) {
             addLog(`⛔ ERRO: ${error.message}`);
@@ -371,7 +393,7 @@ const ImportReturns: React.FC = () => {
                         <p>Aguardando início...</p>
                     </div>
                 ) : logs.map((log, i) => (
-                    <div key={i} className={`border-b border-slate-800/50 py-1 ${log.includes('❌') ? 'text-rose-400' : ''} ${log.includes('⛔') ? 'text-red-500 font-bold' : ''}`}>
+                    <div key={i} className={`border-b border-slate-800/50 py-1 ${log.includes('❌') ? 'text-rose-400' : ''} ${log.includes('⚠️') ? 'text-yellow-400' : ''} ${log.includes('⛔') ? 'text-red-500 font-bold' : ''}`}>
                         {log}
                     </div>
                 ))}
