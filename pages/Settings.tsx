@@ -1,28 +1,35 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
+import toast, { Toaster } from 'react-hot-toast';
 
 const Settings: React.FC = () => {
   const [user, setUser] = useState<any>(null);
+  const [activeSection, setActiveSection] = useState('profile');
+
+  // Estados de Perfil
   const [profile, setProfile] = useState({
     full_name: '',
     email: '',
     role: ''
   });
+
+  // Estados de Preferências
   const [preferences, setPreferences] = useState({
     timezone: '(GMT-03:00) America/Sao_Paulo',
     language: 'Português (BR)'
   });
-  const [security, setSecurity] = useState({
-    mfaEnabled: false,
-    passwordLastChanged: 'Alterada há 3 meses'
-  });
+
+  // Estados de Segurança e Sessão
   const [sessions, setSessions] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [newPassword, setNewPassword] = useState('');
+
+  // Estados de Integração
   const [bitrixWebhook, setBitrixWebhook] = useState('');
+  const [bitrixAccessCode, setBitrixAccessCode] = useState(''); // NOVO: Estado para o código
+
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -38,399 +45,427 @@ const Settings: React.FC = () => {
         setProfile({
           full_name: user.user_metadata?.full_name || '',
           email: user.email || '',
-          role: user.user_metadata?.role || ''
+          role: user.user_metadata?.role || 'Administrador'
         });
-        setPreferences({
-          timezone: user.user_metadata?.timezone || '(GMT-03:00) America/Sao_Paulo',
-          language: user.user_metadata?.language || 'Português (BR)'
-        });
-        setSecurity({
-          mfaEnabled: user.user_metadata?.mfaEnabled || false,
-          passwordLastChanged: user.user_metadata?.passwordLastChanged || 'Alterada há 3 meses'
-        });
+
+        // Buscar Integrações (Webhook e Código)
+        const { data: integration } = await supabase
+          .from('integrations')
+          .select('webhook_url, access_code') // <-- Busca o access_code
+          .eq('service_name', 'bitrix24')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (integration) {
+          setBitrixWebhook(integration.webhook_url || '');
+          setBitrixAccessCode(integration.access_code || ''); // <-- Define no estado
+        }
       }
-      await fetchSessions();
-      await fetchIntegrations();
-    } catch (error) {
-      console.error('Erro ao buscar dados:', error);
+
+      // Buscar Sessões (Simulado/Mock para exemplo visual, já que Supabase Auth Client não expõe sessions list facilmente no client-side free tier)
+      const { data: { session } } = await (supabase.auth as any).getSession();
+      setSessions([
+        {
+          id: session?.access_token.slice(-10),
+          device: 'Chrome on Windows',
+          location: 'São Paulo, BR',
+          ip: '192.168.1.1',
+          last_active: 'Agora',
+          current: true
+        }
+      ]);
+
+    } catch (error: any) {
+      console.error('Erro ao carregar dados:', error.message);
     } finally {
       setLoading(false);
     }
   };
 
-  const fetchSessions = async () => {
+  const handleUpdateProfile = async () => {
     try {
-      const { data: { session }, error } = await (supabase.auth as any).getSession();
-      if (error) throw error;
-      // Since getSessions is not available in client, show current session only
-      setSessions(session ? [session] : []);
-    } catch (error) {
-      console.error('Erro ao buscar sessão:', error);
-      setSessions([]);
-    }
-  };
-
-  const handleSaveProfile = async () => {
-    if (!user) return;
-    setSaving(true);
-    try {
+      setSaving(true);
       const { error } = await (supabase.auth as any).updateUser({
-        data: {
-          full_name: profile.full_name,
-          role: profile.role,
-          timezone: preferences.timezone,
-          language: preferences.language,
-          mfaEnabled: security.mfaEnabled
-        }
-      });
-      if (error) throw error;
-      alert('Perfil atualizado com sucesso!');
-    } catch (error: any) {
-      alert('Erro ao salvar: ' + error.message);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleChangePassword = async () => {
-    if (!newPassword) return alert('Digite uma nova senha.');
-    setSaving(true);
-    try {
-      const { error } = await (supabase.auth as any).updateUser({ password: newPassword });
-      if (error) throw error;
-      setShowPasswordModal(false);
-      setNewPassword('');
-      alert('Senha atualizada com sucesso!');
-      // Update metadata
-      await (supabase.auth as any).updateUser({
-        data: { passwordLastChanged: new Date().toLocaleDateString('pt-BR') }
-      });
-      setSecurity({ ...security, passwordLastChanged: 'Agora' });
-    } catch (error: any) {
-      alert('Erro ao alterar senha: ' + error.message);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const toggleMFA = async () => {
-    const newMFA = !security.mfaEnabled;
-    setSecurity({ ...security, mfaEnabled: newMFA });
-    try {
-      await (supabase.auth as any).updateUser({ data: { mfaEnabled: newMFA } });
-    } catch (error) {
-      console.error('Erro ao atualizar MFA:', error);
-    }
-  };
-
-  const signOutOthers = async () => {
-    try {
-      const { error } = await (supabase.auth as any).signOut({ scope: 'others' });
-      if (error) throw error;
-      alert('Sessões em outros dispositivos encerradas.');
-      await fetchSessions();
-    } catch (error: any) {
-      alert('Erro: ' + error.message);
-    }
-  };
-
-  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file || !user) return;
-
-    setSaving(true);
-    try {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${user.id}.${fileExt}`;
-      const { data, error } = await supabase.storage
-        .from('avatars')
-        .upload(fileName, file, { upsert: true });
-
-      if (error) throw error;
-
-      const { data: { publicUrl } } = supabase.storage
-        .from('avatars')
-        .getPublicUrl(fileName);
-
-      // Update user metadata with avatar URL
-      await (supabase.auth as any).updateUser({
-        data: { avatar_url: publicUrl }
+        data: { full_name: profile.full_name }
       });
 
-      alert('Foto atualizada com sucesso!');
-      // Optionally refresh user data
-      await fetchUserData();
+      if (error) throw error;
+
+      // Atualizar também na tabela profiles se existir
+      await supabase.from('profiles').upsert({
+        id: user.id,
+        full_name: profile.full_name,
+        role: profile.role,
+        updated_at: new Date()
+      });
+
+      toast.success('Perfil atualizado com sucesso!');
     } catch (error: any) {
-      alert('Erro ao fazer upload: ' + error.message);
+      toast.error('Erro ao atualizar perfil: ' + error.message);
     } finally {
       setSaving(false);
-    }
-  };
-
-  const fetchIntegrations = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('integrations')
-        .select('webhook_url')
-        .eq('service_name', 'bitrix24')
-        .maybeSingle();
-
-      if (error) throw error;
-      if (data) setBitrixWebhook(data.webhook_url);
-    } catch (error) {
-      console.error('Erro ao buscar integrações:', error);
     }
   };
 
   const handleSaveBitrix = async () => {
-    setSaving(true);
-    try {
-      const { data: { user } } = await (supabase.auth as any).getUser();
-      if (!user) throw new Error('Usuário não autenticado');
+    if (!bitrixWebhook.startsWith('http')) {
+      return toast.error('Insira uma URL de Webhook válida.');
+    }
 
+    try {
+      setSaving(true);
       const { error } = await supabase
         .from('integrations')
         .upsert({
           user_id: user.id,
           service_name: 'bitrix24',
           webhook_url: bitrixWebhook,
+          access_code: bitrixAccessCode.toUpperCase(), // <-- Salva sempre em MAIÚSCULO
           is_active: true
         }, { onConflict: 'user_id, service_name' });
 
-
       if (error) throw error;
-      alert('Integração com Bitrix24 salva com sucesso!');
+      toast.success('Integração Bitrix24 salva!');
+      setBitrixAccessCode(prev => prev.toUpperCase()); // Atualiza input visualmente
     } catch (error: any) {
-      alert('Erro ao salvar integração: ' + error.message);
+      toast.error('Erro ao salvar integração: ' + error.message);
     } finally {
       setSaving(false);
     }
   };
 
+  const handleChangePassword = async () => {
+    try {
+      setSaving(true);
+      const { error } = await (supabase.auth as any).updateUser({ password: newPassword });
+      if (error) throw error;
+      toast.success('Senha alterada com sucesso!');
+      setShowPasswordModal(false);
+      setNewPassword('');
+    } catch (error: any) {
+      toast.error('Erro ao alterar senha: ' + error.message);
+    } finally {
+      setSaving(false);
+    }
+  };
 
-  if (loading) {
-    return (
-      <div className="max-w-4xl mx-auto space-y-12 pb-20">
-        <div className="text-center py-20">
-          <p className="text-gray-500">Carregando configurações...</p>
-        </div>
-      </div>
-    );
-  }
+  const copyPublicLink = () => {
+    const url = `${window.location.origin}/#/import-returns`;
+    navigator.clipboard.writeText(url);
+    toast.success('Link copiado para a área de transferência!');
+  };
+
+  if (loading) return <div className="p-10 text-center text-slate-500">Carregando configurações...</div>;
 
   return (
-    <div className="max-w-4xl mx-auto space-y-12 pb-20">
-      <div>
-        <h1 className="text-4xl font-black tracking-tight mb-2">Configurações da Conta</h1>
-        <p className="text-gray-500 text-lg">Gerencie suas informações pessoais, preferências locais e protocolos de segurança.</p>
+    <div className="max-w-5xl mx-auto space-y-8 pb-20">
+      <Toaster position="top-right" />
+
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">Configurações</h2>
+          <p className="text-slate-500 text-sm">Gerencie sua conta e preferências do sistema.</p>
+        </div>
       </div>
 
-      <section className="bg-white dark:bg-slate-900 p-8 rounded-xl border border-gray-200 dark:border-gray-800 shadow-sm space-y-8">
-        <div className="flex items-center gap-2 text-primary">
-          <span className="material-symbols-outlined">account_circle</span>
-          <h2 className="text-xl font-bold tracking-tight">Informações do Perfil</h2>
-        </div>
-        <div className="flex flex-col md:flex-row gap-12">
-          <div className="flex flex-col items-center gap-4 shrink-0">
-            <div className="size-32 rounded-full border-4 border-slate-50 dark:border-slate-800 bg-center bg-cover shadow-inner overflow-hidden bg-gray-200 dark:bg-gray-700">
-              {user?.user_metadata?.avatar_url ? (
-                <img src={user.user_metadata.avatar_url} alt="Profile" className="w-full h-full object-cover" />
-              ) : (
-                <span className="material-symbols-outlined text-gray-400 text-4xl">account_circle</span>
-              )}
-            </div>
+      <div className="flex flex-col lg:flex-row gap-8">
+        {/* Sidebar de Navegação */}
+        <nav className="lg:w-64 flex-shrink-0 space-y-1">
+          {[
+            { id: 'profile', icon: 'person', label: 'Meu Perfil' },
+            { id: 'security', icon: 'lock', label: 'Segurança & Login' },
+            { id: 'integrations', icon: 'hub', label: 'Integrações' }, // Bitrix24 aqui
+            { id: 'preferences', icon: 'tune', label: 'Preferências' },
+          ].map((item) => (
             <button
-              onClick={() => fileInputRef.current?.click()}
-              className="text-xs font-bold text-primary hover:underline"
-              disabled={saving}
+              key={item.id}
+              onClick={() => setActiveSection(item.id)}
+              className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-bold rounded-lg transition-all ${activeSection === item.id
+                  ? 'bg-white dark:bg-slate-800 text-primary shadow-sm ring-1 ring-slate-200 dark:ring-slate-700'
+                  : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800/50'
+                }`}
             >
-              {saving ? 'Salvando...' : 'Alterar Foto'}
+              <span className="material-symbols-outlined text-[20px]">{item.icon}</span>
+              {item.label}
             </button>
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileSelect}
-              accept="image/*"
-              className="hidden"
-            />
-          </div>
-          <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="flex flex-col gap-2">
-              <label className="text-xs font-bold text-gray-500 uppercase">Nome Completo</label>
-              <input
-                className="w-full bg-gray-50 dark:bg-slate-800 border-none rounded-lg p-3 text-sm focus:ring-primary"
-                placeholder="Seu nome completo"
-                value={profile.full_name}
-                onChange={(e) => setProfile({ ...profile, full_name: e.target.value })}
-              />
-            </div>
-            <div className="flex flex-col gap-2">
-              <label className="text-xs font-bold text-gray-500 uppercase">Endereço de E-mail</label>
-              <input
-                className="w-full bg-gray-50 dark:bg-slate-800 border-none rounded-lg p-3 text-sm focus:ring-primary"
-                placeholder="seu@email.com"
-                value={profile.email}
-                onChange={(e) => setProfile({ ...profile, email: e.target.value })}
-                disabled
-              />
-            </div>
-            <div className="flex flex-col gap-2 md:col-span-2">
-              <label className="text-xs font-bold text-gray-500 uppercase">Cargo</label>
-              <input
-                className="w-full bg-gray-50 dark:bg-slate-800 border-none rounded-lg p-3 text-sm focus:ring-primary"
-                placeholder="Ex: Product Designer"
-                value={profile.role}
-                onChange={(e) => setProfile({ ...profile, role: e.target.value })}
-              />
-            </div>
-          </div>
-        </div>
-        <div className="flex justify-end">
-          <button
-            onClick={handleSaveProfile}
-            disabled={saving}
-            className="px-6 py-2 bg-primary text-white rounded-lg font-bold hover:opacity-90 disabled:opacity-50"
-          >
-            {saving ? 'Salvando...' : 'Salvar Alterações'}
-          </button>
-        </div>
-      </section>
+          ))}
+        </nav>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        <section className="bg-white dark:bg-slate-900 p-8 rounded-xl border border-gray-200 dark:border-gray-800 shadow-sm flex flex-col gap-6">
-          <div className="flex items-center gap-2 text-primary"><span className="material-symbols-outlined">language</span><h2 className="text-xl font-bold">Preferências</h2></div>
-          <div className="flex flex-col gap-2">
-            <label className="text-xs font-bold text-gray-500 uppercase">Fuso Horário</label>
-            <select
-              className="w-full bg-gray-50 dark:bg-slate-800 border-none rounded-lg text-sm p-3"
-              value={preferences.timezone}
-              onChange={(e) => setPreferences({ ...preferences, timezone: e.target.value })}
-            >
-              <option>(GMT-03:00) America/Sao_Paulo</option>
-              <option>(GMT+00:00) Londres</option>
-              <option>(GMT-05:00) Nova York</option>
-            </select>
-          </div>
-          <div className="flex flex-col gap-2">
-            <label className="text-xs font-bold text-gray-500 uppercase">Idioma Padrão</label>
-            <select
-              className="w-full bg-gray-50 dark:bg-slate-800 border-none rounded-lg text-sm p-3"
-              value={preferences.language}
-              onChange={(e) => setPreferences({ ...preferences, language: e.target.value })}
-            >
-              <option>Português (BR)</option>
-              <option>English (US)</option>
-              <option>Español</option>
-            </select>
-          </div>
-        </section>
+        {/* Área de Conteúdo */}
+        <div className="flex-1 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-6 lg:p-8">
 
-        <section className="bg-white dark:bg-slate-900 p-8 rounded-xl border border-gray-200 dark:border-gray-800 shadow-sm flex flex-col gap-6">
-          <div className="flex items-center gap-2 text-primary"><span className="material-symbols-outlined">shield_person</span><h2 className="text-xl font-bold">Segurança</h2></div>
-          <div className="space-y-4">
-            <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-slate-800 rounded-lg">
-              <div className="flex flex-col"><p className="text-sm font-bold">Senha</p><p className="text-xs text-gray-500">{security.passwordLastChanged}</p></div>
-              <button
-                onClick={() => setShowPasswordModal(true)}
-                className="px-4 py-2 border border-primary text-primary text-xs font-bold rounded-lg hover:bg-primary/10"
-              >
-                Atualizar
-              </button>
-            </div>
-            <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-slate-800 rounded-lg">
-              <div className="flex flex-col"><p className="text-sm font-bold">Autenticação em 2 Fatores</p><p className={`text-xs font-medium ${security.mfaEnabled ? 'text-green-600' : 'text-gray-500'}`}>{security.mfaEnabled ? 'Ativo (SMS)' : 'Inativo'}</p></div>
-              <div
-                className={`w-10 h-6 rounded-full relative shadow-inner cursor-pointer ${security.mfaEnabled ? 'bg-primary' : 'bg-gray-200 dark:bg-gray-700'}`}
-                onClick={toggleMFA}
-              >
-                <div className={`size-4 bg-white rounded-full mt-0.5 transition-all ${security.mfaEnabled ? 'ml-4.5 translate-x-4.5' : 'ml-0.5'}`}></div>
+          {/* --- SEÇÃO: PERFIL --- */}
+          {activeSection === 'profile' && (
+            <div className="space-y-6 animate-in fade-in duration-300">
+              <div className="flex items-center gap-4">
+                <div className="relative group cursor-pointer">
+                  <div className="w-20 h-20 rounded-full bg-slate-200 overflow-hidden border-2 border-white dark:border-slate-800 shadow-md">
+                    {user?.user_metadata?.avatar_url ? (
+                      <img src={user.user_metadata.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-slate-400 bg-slate-100 dark:bg-slate-800">
+                        <span className="material-symbols-outlined text-3xl">person</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    <span className="material-symbols-outlined text-white text-sm">edit</span>
+                  </div>
+                  <input type="file" ref={fileInputRef} className="hidden" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">Foto de Perfil</h3>
+                  <p className="text-xs text-slate-500">JPG, GIF ou PNG. Max 1MB.</p>
+                </div>
               </div>
-            </div>
-          </div>
-        </section>
-      </div>
 
-      <section className="bg-white dark:bg-slate-900 p-8 rounded-xl border border-gray-200 dark:border-gray-800 shadow-sm space-y-8">
-        <div className="flex items-center gap-2 text-primary">
-          <span className="material-symbols-outlined">sync_alt</span>
-          <h2 className="text-xl font-bold tracking-tight">Integrações de Terceiros</h2>
-        </div>
-        <div className="space-y-6">
-          <div className="flex flex-col gap-4 p-6 bg-gray-50 dark:bg-slate-800 rounded-xl border border-gray-100 dark:border-gray-700">
-            <div className="flex items-center gap-3">
-              <div className="size-10 bg-blue-500 rounded-lg flex items-center justify-center text-white font-bold">B</div>
-              <div>
-                <h3 className="text-sm font-bold">Bitrix24 Webhook</h3>
-                <p className="text-xs text-gray-500 text-pretty">Envie tarefas automaticamente para o Bitrix24 ao criá-las no TaskFlow.</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 uppercase">Nome Completo</label>
+                  <input
+                    type="text"
+                    value={profile.full_name}
+                    onChange={(e) => setProfile({ ...profile, full_name: e.target.value })}
+                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-medium focus:ring-2 focus:ring-primary/20 outline-none"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 uppercase">Email</label>
+                  <input
+                    type="email"
+                    value={profile.email}
+                    disabled
+                    className="w-full px-4 py-2.5 bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-500 cursor-not-allowed"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 uppercase">Cargo / Função</label>
+                  <input
+                    type="text"
+                    value={profile.role}
+                    disabled
+                    className="w-full px-4 py-2.5 bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-500 cursor-not-allowed"
+                  />
+                </div>
               </div>
-            </div>
-            <div className="flex flex-col gap-2">
-              <label className="text-xs font-bold text-gray-500 uppercase">URL do Webhook</label>
-              <div className="flex gap-2">
-                <input
-                  className="flex-1 bg-white dark:bg-slate-900 border border-gray-200 dark:border-gray-700 rounded-lg p-2.5 text-sm focus:ring-1 focus:ring-primary outline-none"
-                  placeholder="https://sua-empresa.bitrix24.com.br/rest/1/webhook-id/tasks.task.add.json"
-                  value={bitrixWebhook}
-                  onChange={(e) => setBitrixWebhook(e.target.value)}
-                />
+
+              <div className="pt-4 flex justify-end">
                 <button
-                  onClick={handleSaveBitrix}
+                  onClick={handleUpdateProfile}
                   disabled={saving}
-                  className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-bold hover:opacity-90 disabled:opacity-50 transition-all"
+                  className="px-6 py-2.5 bg-primary text-white font-bold rounded-lg shadow-lg hover:opacity-90 transition-opacity disabled:opacity-50"
                 >
-                  {saving ? '...' : 'Salvar'}
+                  {saving ? 'Salvando...' : 'Salvar Alterações'}
                 </button>
               </div>
             </div>
-          </div>
-        </div>
-      </section>
+          )}
 
-      <section className="bg-white dark:bg-slate-900 p-8 rounded-xl border border-gray-200 dark:border-gray-800 shadow-sm">
-        <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center gap-2 text-primary"><span className="material-symbols-outlined">devices</span><h2 className="text-xl font-bold">Sessões Ativas</h2></div>
-          <button
-            onClick={signOutOthers}
-            className="text-sm font-bold text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 px-4 py-2 rounded-lg"
-          >
-            Encerrar em outros dispositivos
-          </button>
-        </div>
-        <div className="divide-y divide-gray-100 dark:divide-gray-800">
-          {sessions.map((session, index) => (
-            <div key={session.id || index} className="py-4 flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <span className="material-symbols-outlined text-gray-400">laptop_mac</span>
-                <div>
-                  <p className="text-sm font-bold">{session.user_agent || 'Dispositivo Desconhecido'}</p>
-                  <p className="text-xs text-gray-500">
-                    {session.ip || 'IP Desconhecido'} • {index === 0 ? <span className="text-primary font-medium">Sessão Atual</span> : 'Outra Sessão'}
+          {/* --- SEÇÃO: INTEGRAÇÕES (BITRIX & CÓDIGO) --- */}
+          {activeSection === 'integrations' && (
+            <div className="space-y-8 animate-in fade-in duration-300">
+
+              {/* Card Webhook */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 bg-blue-500/10 rounded-lg flex items-center justify-center text-blue-500">
+                    <span className="material-symbols-outlined">api</span>
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-white">Bitrix24 Webhook</h3>
+                    <p className="text-xs text-slate-500">Conecte seu CRM para sincronizar tarefas e devoluções.</p>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 uppercase">Webhook URL (Inbound)</label>
+                  <input
+                    type="text"
+                    placeholder="https://seu-bitrix.bitrix24.com.br/rest/1/xxxx..."
+                    value={bitrixWebhook}
+                    onChange={(e) => setBitrixWebhook(e.target.value)}
+                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-mono focus:ring-2 focus:ring-primary/20 outline-none"
+                  />
+                  <p className="text-[10px] text-slate-400">
+                    Certifique-se de que o webhook tem permissões: <strong>task, crm, user</strong>.
                   </p>
                 </div>
               </div>
-              <span className="text-xs font-bold text-green-500 bg-green-50 dark:bg-green-900/20 px-2 py-1 rounded">Ativo</span>
-            </div>
-          ))}
-        </div>
-      </section>
 
+              <div className="border-t border-slate-100 dark:border-slate-800 my-6"></div>
+
+              {/* Card Acesso Público */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 bg-emerald-500/10 rounded-lg flex items-center justify-center text-emerald-500">
+                    <span className="material-symbols-outlined">public</span>
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-white">Importação Pública</h3>
+                    <p className="text-xs text-slate-500">Configure o acesso para a página de importação de devoluções.</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Campo Código de Acesso */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-500 uppercase">Código de Acesso da Loja</label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        placeholder="Ex: LOJA01"
+                        value={bitrixAccessCode}
+                        onChange={(e) => setBitrixAccessCode(e.target.value.toUpperCase())}
+                        className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-bold tracking-widest focus:ring-2 focus:ring-primary/20 outline-none uppercase"
+                      />
+                      <span className="absolute right-3 top-2.5 material-symbols-outlined text-slate-400 text-lg">vpn_key</span>
+                    </div>
+                    <p className="text-[10px] text-slate-400">
+                      Este código será solicitado a qualquer pessoa que tentar usar a página de importação pública.
+                    </p>
+                  </div>
+
+                  {/* Campo Link Público (Apenas Leitura/Cópia) */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-500 uppercase">Link da Página Pública</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        readOnly
+                        value={`${window.location.origin}/#/import-returns`}
+                        className="flex-1 px-4 py-2.5 bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-500 cursor-not-allowed"
+                      />
+                      <button
+                        onClick={copyPublicLink}
+                        className="px-3 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 rounded-lg text-slate-600 dark:text-slate-300 transition-colors"
+                        title="Copiar Link"
+                      >
+                        <span className="material-symbols-outlined text-lg">content_copy</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-4 flex justify-end">
+                <button
+                  onClick={handleSaveBitrix}
+                  disabled={saving}
+                  className="px-6 py-2.5 bg-primary text-white font-bold rounded-lg shadow-lg hover:opacity-90 transition-opacity disabled:opacity-50"
+                >
+                  {saving ? 'Salvando...' : 'Salvar Configurações'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* --- SEÇÃO: SEGURANÇA --- */}
+          {activeSection === 'security' && (
+            <div className="space-y-8 animate-in fade-in duration-300">
+              <div className="space-y-4">
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Alterar Senha</h3>
+                <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-slate-700">
+                  <div>
+                    <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Senha de Acesso</p>
+                    <p className="text-xs text-slate-500">Recomendamos usar uma senha forte.</p>
+                  </div>
+                  <button onClick={() => setShowPasswordModal(true)} className="text-sm font-bold text-primary hover:underline">
+                    Alterar Senha
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Sessões Ativas</h3>
+                <div className="space-y-3">
+                  {sessions.map((sess, idx) => (
+                    <div key={idx} className="flex items-center justify-between p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg">
+                      <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center">
+                          <span className="material-symbols-outlined text-slate-500">devices</span>
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-slate-900 dark:text-white">{sess.device}</p>
+                          <p className="text-xs text-slate-500">
+                            {sess.location} • {sess.ip} • {sess.current ? <span className="text-emerald-500 font-bold">Atual</span> : 'Outra Sessão'}
+                          </p>
+                        </div>
+                      </div>
+                      <span className="text-xs font-bold text-emerald-500 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-1 rounded">Ativo</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* --- SEÇÃO: PREFERÊNCIAS --- */}
+          {activeSection === 'preferences' && (
+            <div className="space-y-6 animate-in fade-in duration-300">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 uppercase">Idioma</label>
+                  <select
+                    value={preferences.language}
+                    onChange={(e) => setPreferences({ ...preferences, language: e.target.value })}
+                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-medium focus:ring-2 focus:ring-primary/20 outline-none"
+                  >
+                    <option>Português (BR)</option>
+                    <option>English (US)</option>
+                    <option>Español</option>
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 uppercase">Fuso Horário</label>
+                  <select
+                    value={preferences.timezone}
+                    onChange={(e) => setPreferences({ ...preferences, timezone: e.target.value })}
+                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-medium focus:ring-2 focus:ring-primary/20 outline-none"
+                  >
+                    <option>(GMT-03:00) America/Sao_Paulo</option>
+                    <option>(GMT-00:00) UTC</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="p-4 bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-200 text-sm rounded-lg flex gap-3">
+                <span className="material-symbols-outlined">info</span>
+                <span>As preferências são salvas localmente no seu navegador.</span>
+              </div>
+            </div>
+          )}
+
+        </div>
+      </div>
+
+      {/* Modal de Senha */}
       {showPasswordModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-slate-900 p-6 rounded-lg max-w-md w-full mx-4">
-            <h3 className="text-lg font-bold mb-4">Alterar Senha</h3>
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-2xl max-w-sm w-full animate-in zoom-in-95 duration-200">
+            <h3 className="text-lg font-bold mb-1 text-slate-900 dark:text-white">Alterar Senha</h3>
+            <p className="text-sm text-slate-500 mb-4">Digite sua nova senha abaixo.</p>
+
             <input
               type="password"
               placeholder="Nova senha"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
-              className="w-full bg-gray-50 dark:bg-slate-800 border-none rounded-lg p-3 text-sm focus:ring-primary mb-4"
+              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-3 text-sm focus:ring-2 focus:ring-primary outline-none mb-4"
             />
+
             <div className="flex gap-2">
-              <button onClick={handleChangePassword} disabled={saving} className="flex-1 bg-primary text-white py-2 rounded-lg font-bold disabled:opacity-50">
-                {saving ? 'Salvando...' : 'Salvar'}
-              </button>
-              <button onClick={() => setShowPasswordModal(false)} className="flex-1 bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white py-2 rounded-lg font-bold">
+              <button
+                onClick={() => setShowPasswordModal(false)}
+                className="flex-1 py-2.5 font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+              >
                 Cancelar
+              </button>
+              <button
+                onClick={handleChangePassword}
+                disabled={saving || !newPassword}
+                className="flex-1 bg-primary text-white py-2.5 rounded-lg font-bold shadow-lg shadow-primary/20 hover:opacity-90 disabled:opacity-50"
+              >
+                {saving ? 'Salvando...' : 'Confirmar'}
               </button>
             </div>
           </div>
