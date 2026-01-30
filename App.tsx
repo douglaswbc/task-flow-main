@@ -13,6 +13,7 @@ import Tasks from './pages/Tasks';
 import RecurringTasks from './pages/RecurringTasks';
 import LogsHistory from './pages/LogsHistory';
 import Settings from './pages/Settings';
+import ImportReturns from './pages/ImportReturns';
 import ConfigureRecurrence from './pages/ConfigureRecurrence';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
@@ -75,6 +76,7 @@ const App: React.FC = () => {
         <Route path="/" element={<PrivateLayout><Dashboard /></PrivateLayout>} />
         <Route path="/tasks" element={<PrivateLayout><Tasks /></PrivateLayout>} />
         <Route path="/recurring" element={<PrivateLayout><RecurringTasks /></PrivateLayout>} />
+        <Route path="/import-returns" element={<PrivateLayout><ImportReturns /></PrivateLayout>} />
         <Route path="/recurring/config" element={<PrivateLayout><ConfigureRecurrence /></PrivateLayout>} />
         <Route path="/logs" element={<PrivateLayout><LogsHistory /></PrivateLayout>} />
         <Route path="/settings" element={<PrivateLayout><Settings /></PrivateLayout>} />

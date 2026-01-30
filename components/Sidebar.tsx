@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 
@@ -14,6 +13,8 @@ const Sidebar: React.FC<SidebarProps> = ({ onLogout, user }) => {
   const navItems = [
     { to: '/', icon: 'dashboard', label: 'Dashboard' },
     { to: '/tasks', icon: 'check_circle', label: 'Minhas Tarefas' },
+    // Item Novo Adicionado Aqui
+    { to: '/import-returns', icon: 'upload_file', label: 'Importar Devoluções' },
     { to: '/recurring', icon: 'sync', label: 'Recorrências' },
     { to: '/logs', icon: 'history', label: 'Histórico de Logs' },
   ];
@@ -53,9 +54,8 @@ const Sidebar: React.FC<SidebarProps> = ({ onLogout, user }) => {
       )}
 
       {/* Sidebar */}
-      <aside className={`w-64 lg:w-64 md:w-56 sm:w-48 border-r border-slate-200 dark:border-slate-800 flex flex-col bg-white dark:bg-background-dark h-full shrink-0 fixed lg:relative top-0 left-0 z-50 transform transition-transform duration-300 ease-in-out ${
-        isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-      }`}>
+      <aside className={`w-64 lg:w-64 md:w-56 sm:w-48 border-r border-slate-200 dark:border-slate-800 flex flex-col bg-white dark:bg-background-dark h-full shrink-0 fixed lg:relative top-0 left-0 z-50 transform transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+        }`}>
         <div className="p-4 lg:p-6 flex items-center gap-3">
           <div className="bg-primary rounded-lg p-1.5 text-white flex items-center justify-center">
             <span className="material-symbols-outlined !text-white">account_tree</span>
@@ -85,10 +85,9 @@ const Sidebar: React.FC<SidebarProps> = ({ onLogout, user }) => {
               to={item.to}
               onClick={handleNavClick}
               className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all ${
-                  isActive
-                    ? 'bg-primary/10 text-primary border-r-4 border-primary'
-                    : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'
+                `flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all ${isActive
+                  ? 'bg-primary/10 text-primary border-r-4 border-primary'
+                  : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'
                 }`
               }
             >
@@ -104,10 +103,9 @@ const Sidebar: React.FC<SidebarProps> = ({ onLogout, user }) => {
               to={item.to}
               onClick={handleNavClick}
               className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all ${
-                  isActive
-                    ? 'bg-primary/10 text-primary border-r-4 border-primary'
-                    : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'
+                `flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all ${isActive
+                  ? 'bg-primary/10 text-primary border-r-4 border-primary'
+                  : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'
                 }`
               }
             >

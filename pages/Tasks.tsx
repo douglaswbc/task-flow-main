@@ -242,12 +242,25 @@ const Tasks: React.FC = () => {
     }
   };
 
+  // --- DELETE ATUALIZADO (Corrige o erro de Foreign Key) ---
   const handleDelete = async (id: string) => {
     if (!window.confirm('Tem certeza que deseja excluir esta tarefa permanentemente?')) return;
 
     try {
+      // 1. Excluir notificações vinculadas primeiro
+      const { error: notificationError } = await supabase
+        .from('notifications')
+        .delete()
+        .eq('task_id', id);
+
+      if (notificationError) {
+        console.warn('Aviso ao deletar notificações:', notificationError.message);
+      }
+
+      // 2. Excluir a tarefa
       const { error } = await supabase.from('tasks').delete().eq('id', id);
       if (error) throw error;
+
       setTasks(prev => prev.filter(task => task.id !== id));
       setTotal(prev => prev - 1);
     } catch (err: any) {
@@ -286,30 +299,103 @@ const Tasks: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6 max-w-6xl mx-auto">
+    <div className="space-y-6 max-w-6xl mx-auto px-4 md:px-0">
       {/* HEADER DA PÁGINA */}
-      <div className="flex items-end justify-between">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div className="space-y-1">
           <div className="flex items-center gap-3">
-            <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">Tarefas</h2>
+            <h2 className="text-2xl md:text-3xl font-black text-slate-900 dark:text-white tracking-tight">Tarefas</h2>
             <span className="bg-slate-100 dark:bg-slate-800 text-slate-500 px-2 py-0.5 rounded text-xs font-bold">{total}</span>
           </div>
           <p className="text-slate-500 text-sm">Gerencie seu fluxo de trabalho pessoal e automático.</p>
         </div>
 
-        <div className="flex gap-3">
-          <button onClick={fetchTasks} className="px-4 py-2 text-sm font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-sm hover:bg-slate-50 transition-all flex items-center gap-2">
-            <span className="material-symbols-outlined text-[18px]">refresh</span>
+        <div className="flex gap-3 w-full md:w-auto">
+          <button onClick={fetchTasks} className="p-2.5 border rounded-lg hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 transition-colors" title="Recarregar">
+            <span className="material-symbols-outlined">refresh</span>
           </button>
-          <button onClick={openNewTaskModal} className="px-4 py-2 text-sm font-bold bg-primary text-white rounded-lg shadow-sm hover:opacity-90 transition-all flex items-center gap-2">
+          <button onClick={openNewTaskModal} className="flex-1 md:flex-none px-4 py-2.5 bg-primary text-white rounded-lg font-bold flex justify-center items-center gap-2 hover:opacity-90 transition-opacity">
             <span className="material-symbols-outlined text-[18px]">add</span>
             Nova Tarefa
           </button>
         </div>
       </div>
 
-      {/* TABELA DE TAREFAS */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm overflow-hidden">
+      {/* --- MODO CARD (MOBILE - VISÍVEL APENAS EM TELAS PEQUENAS) --- */}
+      <div className="md:hidden space-y-4">
+        {loading ? (
+          <div className="text-center py-8 text-slate-400">Carregando tarefas...</div>
+        ) : filteredTasks.length === 0 ? (
+          <div className="text-center py-8 text-slate-400 italic">Nenhuma tarefa encontrada.</div>
+        ) : filteredTasks.map((task) => (
+          <div key={task.id} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm relative overflow-hidden">
+            {/* Indicador de Prioridade */}
+            {task.is_high_priority && (
+              <div className="absolute left-0 top-0 bottom-0 w-1 bg-rose-500"></div>
+            )}
+
+            <div className="flex justify-between items-start mb-3 pl-2">
+              <div onClick={() => openEditTaskModal(task)} className="cursor-pointer">
+                <h3 className={`font-bold text-slate-900 dark:text-white ${task.status === 'COMPLETED' ? 'line-through opacity-60' : ''}`}>
+                  {task.title}
+                </h3>
+                {task.description && <p className="text-xs text-slate-500 mt-1 line-clamp-2">{task.description}</p>}
+              </div>
+              <button onClick={() => openEditTaskModal(task)} className="text-slate-400">
+                <span className="material-symbols-outlined text-lg">edit</span>
+              </button>
+            </div>
+
+            <div className="flex flex-wrap gap-2 mb-4 pl-2">
+              {/* Status Badge */}
+              <span onClick={() => cycleStatus(task)} className={`px-2 py-1 rounded text-xs font-bold ${STATUS_MAP[task.status].bg} ${STATUS_MAP[task.status].color} cursor-pointer`}>
+                {STATUS_MAP[task.status].label}
+              </span>
+
+              {/* Prazo */}
+              {task.deadline && (
+                <span className="flex items-center gap-1 text-xs text-orange-600 bg-orange-50 dark:bg-orange-900/20 px-2 py-1 rounded">
+                  <span className="material-symbols-outlined text-[14px]">event</span>
+                  {new Date(task.deadline).toLocaleDateString()}
+                </span>
+              )}
+
+              {/* Checklist Count */}
+              {task.checklist && task.checklist.length > 0 && (
+                <span className="flex items-center gap-1 text-[10px] text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">
+                  <span className="material-symbols-outlined text-[12px]">check_box</span> {task.checklist.length}
+                </span>
+              )}
+            </div>
+
+            {/* Rodapé do Card */}
+            <div className="flex justify-between items-center border-t border-slate-100 dark:border-slate-800 pt-3 pl-2">
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center gap-2 text-xs text-slate-500">
+                  {task.origin === 'Recorrente' && (
+                    <span className="flex items-center gap-1 text-primary">
+                      <span className="material-symbols-outlined text-[14px]">sync</span> Auto
+                    </span>
+                  )}
+                </div>
+                {task.responsible_id && (
+                  <div className="flex items-center gap-1 text-[10px] text-slate-400">
+                    <span className="material-symbols-outlined text-[12px]">account_circle</span>
+                    <span className="truncate max-w-[120px]">{getResponsibleName(task.responsible_id)}</span>
+                  </div>
+                )}
+              </div>
+
+              <button onClick={() => handleDelete(task.id)} className="text-red-400 hover:text-red-600 flex items-center gap-1 text-xs font-bold">
+                <span className="material-symbols-outlined text-[16px]">delete</span> Excluir
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* --- MODO TABELA (DESKTOP - VISÍVEL APENAS EM TELAS MÉDIAS+) --- */}
+      <div className="hidden md:block bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm overflow-hidden">
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800">
