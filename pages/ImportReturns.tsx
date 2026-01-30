@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import * as XLSX from 'xlsx'; // Requer: npm install xlsx
+import * as XLSX from 'xlsx';
 import { supabase } from '../lib/supabase';
+import toast, { Toaster } from 'react-hot-toast'; // <--- IMPORTANTE
 
-// --- CONFIGURAÇÃO (Mantida) ---
+// --- CONFIGURAÇÃO ---
 const BITRIX_FIELD_MAP = {
     OPPORTUNITY: 'Quantia de Reembolso',
     CURRENCY_ID: 'Moeda',
@@ -49,13 +50,11 @@ const ImportReturns: React.FC = () => {
     const [logs, setLogs] = useState<string[]>([]);
     const [progress, setProgress] = useState(0);
 
-    // Estados para o Código de Acesso
     const [showAccessModal, setShowAccessModal] = useState(false);
     const [accessCode, setAccessCode] = useState('');
     const [webhookUrl, setWebhookUrl] = useState<string | null>(null);
     const [verifyingCode, setVerifyingCode] = useState(false);
 
-    // Força o modal
     useEffect(() => {
         if (!webhookUrl) {
             setShowAccessModal(true);
@@ -146,9 +145,11 @@ const ImportReturns: React.FC = () => {
 
     const addLog = (msg: string) => setLogs(p => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...p]);
 
+    // --- VERIFICAÇÃO DO CÓDIGO ---
     const verifyAccessCode = async () => {
         const normalizedCode = accessCode.trim().toLowerCase();
-        if (!normalizedCode) return alert("Digite o código.");
+        if (!normalizedCode) return toast.error("Digite o código de acesso.");
+
         setVerifyingCode(true);
         try {
             const { data, error } = await supabase.rpc('get_webhook_by_code', { code_input: normalizedCode });
@@ -156,48 +157,59 @@ const ImportReturns: React.FC = () => {
             if (data) {
                 setWebhookUrl(data);
                 setShowAccessModal(false);
+                toast.success("Acesso liberado com sucesso!", { duration: 3000 });
                 addLog("🔓 Acesso liberado! Integração localizada.");
             } else {
-                alert("Código inválido ou integração inativa.");
+                toast.error("Código inválido ou loja inativa.");
                 setAccessCode('');
             }
         } catch (err: any) {
             console.error(err);
-            alert("Erro ao verificar código: " + err.message);
+            toast.error("Erro ao verificar: " + err.message);
         } finally {
             setVerifyingCode(false);
         }
     };
 
-    // --- FUNÇÃO PARA VERIFICAR DUPLICIDADE ---
+    // --- CHECK DUPLICIDADE ---
     const checkDealExists = async (title: string, listUrl: string): Promise<string | false> => {
         try {
             const res = await fetch(listUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    filter: { "TITLE": title }, // Busca exata pelo título
+                    filter: { "TITLE": title },
                     select: ["ID"]
                 })
             });
             const data = await res.json();
             if (data.result && data.result.length > 0) {
-                return data.result[0].ID; // Retorna o ID se existir
+                return data.result[0].ID;
             }
             return false;
         } catch (error) {
-            console.error("Erro ao verificar duplicidade", error);
-            return false; // Em caso de erro de rede, assume que não existe para tentar criar (ou poderia bloquear)
+            console.error("Erro verificação", error);
+            return false;
         }
     };
 
+    // --- PROCESSAMENTO ---
     const handleStartProcess = () => {
-        if (!file) return alert('Selecione um arquivo.');
+        if (!file) return toast.error('Por favor, selecione um arquivo primeiro.');
         if (!webhookUrl) {
             setShowAccessModal(true);
             return;
         }
-        runImportLogic();
+
+        // Inicia com um toast de loading que pode ser atualizado depois se quiser
+        toast.promise(
+            runImportLogic(),
+            {
+                loading: 'Processando arquivo...',
+                success: 'Processo finalizado!',
+                error: 'Erro ao processar.',
+            }
+        );
     };
 
     const runImportLogic = async () => {
@@ -206,7 +218,7 @@ const ImportReturns: React.FC = () => {
         setProgress(0);
 
         try {
-            if (!webhookUrl) throw new Error("Erro interno: Webhook perdido.");
+            if (!webhookUrl) throw new Error("Webhook perdido. Recarregue a página.");
 
             let data: any[] = [];
             const ext = file!.name.split('.').pop()?.toLowerCase();
@@ -218,16 +230,13 @@ const ImportReturns: React.FC = () => {
             else if (ext === 'xml') data = await parseXML(file!);
             else throw new Error("Formato não suportado.");
 
-            if (!data || data.length === 0) throw new Error("Arquivo vazio.");
+            if (!data || data.length === 0) throw new Error("O arquivo está vazio.");
 
-            addLog(`🔍 ${data.length} registros encontrados. Verificando duplicidades e importando...`);
+            addLog(`🔍 ${data.length} registros encontrados.`);
 
-            // Prepara URLs
-            // Remove métodos antigos para ter a base
             const baseApiUrl = webhookUrl.replace(/\/tasks\.task\.add.*/, '').replace(/\/user\.get.*/, '').replace(/\/$/, '');
-
             const dealAddUrl = `${baseApiUrl}/crm.deal.add`;
-            const dealListUrl = `${baseApiUrl}/crm.deal.list`; // URL para verificar duplicidade
+            const dealListUrl = `${baseApiUrl}/crm.deal.list`;
             const commentUrl = `${baseApiUrl}/crm.timeline.comment.add`;
 
             let success = 0;
@@ -252,30 +261,26 @@ const ImportReturns: React.FC = () => {
 
                 if (!orderId) continue;
 
-                // --- 1. Título e Duplicidade ---
                 const finalTitle = orderId;
-
-                // Verifica se já existe antes de criar
                 const existingId = await checkDealExists(finalTitle, dealListUrl);
 
                 if (existingId) {
-                    addLog(`⚠️ [${orderId}] Ignorado: Já existe no Bitrix (ID: ${existingId})`);
+                    addLog(`⚠️ [${orderId}] Ignorado: Já existe (ID: ${existingId})`);
                     skipped++;
                     setProgress(Math.round(((i + 1) / data.length) * 100));
-                    continue; // Pula para o próximo
+                    continue;
                 }
 
-                // --- 2. Cálculo do Prazo (Deadline) ---
                 const returnDateRaw = getVal(['Tempo de Devolução', 'Tempo_de_Devolucao', 'Data da coleta']);
                 const returnDate = parseDate(returnDateRaw);
                 const deadline = new Date(returnDate);
-                deadline.setDate(deadline.getDate() + 15); // ADICIONA 15 DIAS
+                deadline.setDate(deadline.getDate() + 15);
 
                 const fields: any = {
                     TITLE: finalTitle,
                     OPPORTUNITY: parseMoney(getVal(['Quantia de Reembolso', 'Quantia_de_Reembolso'])),
                     CURRENCY_ID: 'BRL',
-                    CLOSEDATE: deadline.toISOString(), // Envia o prazo calculado
+                    CLOSEDATE: deadline.toISOString(),
                     CATEGORY_ID: 3,
                     OPENED: 'Y',
                     ASSIGNED_BY_ID: 1,
@@ -310,7 +315,7 @@ const ImportReturns: React.FC = () => {
 
                     if (json.result) {
                         success++;
-                        addLog(`✅ [${orderId}] Criado com prazo para ${deadline.toLocaleDateString()}! ID: ${json.result}`);
+                        addLog(`✅ [${orderId}] Criado! ID: ${json.result}`);
                         await fetch(commentUrl, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
@@ -326,15 +331,39 @@ const ImportReturns: React.FC = () => {
                 }
 
                 setProgress(Math.round(((i + 1) / data.length) * 100));
-                // Pequeno delay para não sobrecarregar a API na verificação + criação
                 if (i % 5 === 0) await new Promise(r => setTimeout(r, 200));
             }
 
-            alert(`Concluído!\nNovos: ${success}\nIgnorados (Já existiam): ${skipped}\nErros: ${errors}`);
+            // --- NOTIFICAÇÃO PERSONALIZADA FINAL (Estilo Recibo) ---
+            toast((t) => (
+                <div className="flex flex-col gap-2 min-w-[200px]">
+                    <div className="font-bold text-slate-800">Resumo da Importação</div>
+                    <div className="text-sm space-y-1">
+                        <div className="flex justify-between">
+                            <span className="text-emerald-600 font-bold">✅ Criados:</span>
+                            <span>{success}</span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span className="text-blue-600 font-bold">⚠️ Ignorados:</span>
+                            <span>{skipped}</span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span className="text-red-600 font-bold">❌ Erros:</span>
+                            <span>{errors}</span>
+                        </div>
+                    </div>
+                    <button
+                        className="mt-2 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs py-1 px-2 rounded w-full"
+                        onClick={() => toast.dismiss(t.id)}
+                    >
+                        Fechar
+                    </button>
+                </div>
+            ), { duration: 6000 });
 
         } catch (error: any) {
             addLog(`⛔ ERRO: ${error.message}`);
-            alert(error.message);
+            toast.error(error.message);
         } finally {
             setLoading(false);
         }
@@ -342,6 +371,9 @@ const ImportReturns: React.FC = () => {
 
     return (
         <div className="max-w-4xl mx-auto space-y-6">
+            {/* Componente de Notificações */}
+            <Toaster position="top-right" />
+
             <div className="space-y-1">
                 <h2 className="text-3xl font-black text-slate-900 dark:text-white">Importar Devoluções</h2>
                 <p className="text-slate-500 text-sm">Área Pública - Requer Código de Acesso.</p>
