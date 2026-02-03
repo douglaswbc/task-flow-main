@@ -1,472 +1,476 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
+import * as XLSX from 'xlsx';
 import { supabase } from '../lib/supabase';
 import toast, { Toaster } from 'react-hot-toast';
 
-const Settings: React.FC = () => {
-  const [user, setUser] = useState<any>(null);
-  const [activeSection, setActiveSection] = useState('profile');
+// --- CONFIGURAÇÃO ---
+const BITRIX_FIELD_MAP = {
+  OPPORTUNITY: 'Quantia de Reembolso',
+  CURRENCY_ID: 'Moeda',
+  MARKETPLACE: 'UF_CRM_1769125430993',
+  STORE_NAME: 'UF_CRM_1767707826411',
+  TRACKING_NO: 'UF_CRM_1769468729223',
+  RETURN_ID: 'UF_CRM_1769468083222',
+  RETURN_REASON: 'UF_CRM_1769468273095',
+  RETURN_TYPE: 'UF_CRM_1769469291861',
+  PLATFORM_STATUS: 'UF_CRM_1769469412311',
+  PRODUCT_SKU: 'UF_CRM_1769468421997',
+  AD_TITLE: 'UF_CRM_1769468405476',
+  AD_ID: 'UF_CRM_1769468686576',
+  COLLECTION_DATE: 'UF_CRM_1769611030661',
+  QUANTITY: 'UF_CRM_1769468707842',
+  SHIPPING_METHOD: 'UF_CRM_1768915318859',
+  REAL_REASON: 'UF_CRM_1769473904030',
+  STATE: 'UF_CRM_ESTADO',
+  VARIANT_VALUE: 'UF_CRM_VALOR_VARIANTE',
+  PRICE: 'UF_CRM_1767709999596',
+  LOGISTICS_STATUS: 'UF_CRM_STATUS_LOG',
+};
 
-  // Estados de Perfil
-  const [profile, setProfile] = useState({
-    full_name: '',
-    email: '',
-    role: ''
-  });
+const LIST_VALUES_MAP: Record<string, Record<string, string | number>> = {
+  MARKETPLACE: { "Shopee": 55, "Magalu": 57, "Kwai": 59, "Mercado Livre": 61, "TikTok": 63, "Amazon": 65 },
+  STORE_NAME: { "SHP - Styllo Casa": 51, "SHP - Ops comprei!": 53 },
+  RETURN_TYPE: { "RETURN_REFUND": 69, "REFUND": 67 },
+  PLATFORM_STATUS: { "ACCEPTED": 71, "CANCELLED": 75 }
+};
 
-  // Estados de Preferências
-  const [preferences, setPreferences] = useState({
-    timezone: '(GMT-03:00) America/Sao_Paulo',
-    language: 'Português (BR)'
-  });
+const OPERATOR_INSTRUCTIONS = `
+📋 INSTRUÇÕES DE DEVOLUÇÃO:
+1. Verificar integridade do produto recebido.
+2. Conferir se o SKU corresponde ao pedido.
+3. Tirar fotos do pacote e do produto.
+4. Se estiver tudo ok, aprovar reembolso na plataforma.
+5. Atualizar estoque no ERP.
+6. Mover card para "Concluído".
+`;
 
-  // Estados de Segurança e Sessão
-  const [sessions, setSessions] = useState<any[]>([]);
-  const [showPasswordModal, setShowPasswordModal] = useState(false);
-  const [newPassword, setNewPassword] = useState('');
+const ImportReturns: React.FC = () => {
+  const [file, setFile] = useState<File | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [logs, setLogs] = useState<string[]>([]);
+  const [progress, setProgress] = useState(0);
 
-  // Estados de Integração
-  const [bitrixWebhook, setBitrixWebhook] = useState('');
-  const [bitrixAccessCode, setBitrixAccessCode] = useState(''); // NOVO: Estado para o código
-
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [showAccessModal, setShowAccessModal] = useState(false);
+  const [accessCode, setAccessCode] = useState('');
+  const [webhookUrl, setWebhookUrl] = useState<string | null>(null);
+  const [verifyingCode, setVerifyingCode] = useState(false);
 
   useEffect(() => {
-    fetchUserData();
-  }, []);
+    if (!webhookUrl) {
+      setShowAccessModal(true);
+    }
+  }, [webhookUrl]);
 
-  const fetchUserData = async () => {
+  // --- PARSERS ---
+  const parseExcel = async (file: File) => {
+    const data = await file.arrayBuffer();
+    const workbook = XLSX.read(data);
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    return XLSX.utils.sheet_to_json(worksheet);
+  };
+
+  const parseCSV = async (file: File) => {
+    const text = await file.text();
+    const lines = text.split('\n').filter(l => l.trim() !== '');
+    if (lines.length < 2) return [];
+    const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+    return lines.slice(1).map(line => {
+      const values: string[] = [];
+      let currentVal = '';
+      let insideQuote = false;
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        if (char === '"') insideQuote = !insideQuote;
+        else if (char === ',' && !insideQuote) {
+          values.push(currentVal.trim().replace(/^"|"$/g, ''));
+          currentVal = '';
+        } else currentVal += char;
+      }
+      values.push(currentVal.trim().replace(/^"|"$/g, ''));
+      const row: any = {};
+      headers.forEach((h, i) => row[h] = values[i] || '');
+      return row;
+    });
+  };
+
+  const parseXML = async (file: File) => {
+    const text = await file.text();
+    const parser = new DOMParser();
+    const xmlDoc = parser.parseFromString(text, "text/xml");
+    const rows = Array.from(xmlDoc.documentElement.children);
+    return rows.map(row => {
+      const item: any = {};
+      Array.from(row.children).forEach(col => {
+        item[col.tagName] = col.textContent;
+        if (col.tagName === 'N_de_Pedido_da_Plataforma') item['Nº de Pedido da Plataforma'] = col.textContent;
+        if (col.tagName === 'Tempo_de_Devolucao') item['Tempo de Devolução'] = col.textContent;
+      });
+      return item;
+    });
+  };
+
+  const parseDate = (val: any) => {
+    if (!val) return new Date();
+    if (typeof val === 'number') return new Date((val - (25567 + 2)) * 86400 * 1000);
+    if (typeof val === 'string') {
+      if (val.includes('T')) return new Date(val);
+      const parts = val.split(/[\s/:]/);
+      if (parts.length >= 3) return new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]), Number(parts[3] || 12), Number(parts[4] || 0));
+    }
+    return new Date();
+  };
+
+  const parseMoney = (val: any) => {
+    if (val === null || val === undefined || val === '') return 0;
+    if (typeof val === 'number') return Number(val.toFixed(2));
+    if (typeof val === 'string') {
+      let v = val.replace(/[^\d.,-]/g, '').trim();
+      if (v.includes('.') && v.includes(',')) v = v.lastIndexOf(',') > v.lastIndexOf('.') ? v.replace(/\./g, '').replace(',', '.') : v.replace(/,/g, '');
+      else if (v.includes(',')) v = v.replace(',', '.');
+      const num = parseFloat(v);
+      return isNaN(num) ? 0 : Number(num.toFixed(2));
+    }
+    return 0;
+  };
+
+  const getListValue = (category: string, value: any) => {
+    if (!value) return '';
+    const map = LIST_VALUES_MAP[category];
+    if (!map) return value;
+    const valStr = String(value).trim().toLowerCase();
+    const foundKey = Object.keys(map).find(k => k.toLowerCase() === valStr);
+    return foundKey ? map[foundKey] : value;
+  };
+
+  const addLog = (msg: string) => setLogs(p => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...p]);
+
+  const verifyAccessCode = async () => {
+    const normalizedCode = accessCode.trim().toLowerCase();
+    if (!normalizedCode) return toast.error("Digite o código de acesso.");
+
+    setVerifyingCode(true);
     try {
-      const { data: { user }, error } = await (supabase.auth as any).getUser();
+      const { data, error } = await supabase.rpc('get_webhook_by_code', { code_input: normalizedCode });
       if (error) throw error;
-      if (user) {
-        setUser(user);
-        setProfile({
-          full_name: user.user_metadata?.full_name || '',
-          email: user.email || '',
-          role: user.user_metadata?.role || 'Administrador'
-        });
+      if (data) {
+        setWebhookUrl(data);
+        setShowAccessModal(false);
+        toast.success("Acesso liberado com sucesso!", { duration: 3000 });
+        addLog("🔓 Acesso liberado! Integração localizada.");
+      } else {
+        toast.error("Código inválido ou loja inativa.");
+        setAccessCode('');
+      }
+    } catch (err: any) {
+      console.error(err);
+      toast.error("Erro ao verificar: " + err.message);
+    } finally {
+      setVerifyingCode(false);
+    }
+  };
 
-        // Buscar Integrações (Webhook e Código)
-        const { data: integration } = await supabase
-          .from('integrations')
-          .select('webhook_url, access_code') // <-- Busca o access_code
-          .eq('service_name', 'bitrix24')
-          .eq('user_id', user.id)
-          .maybeSingle();
+  const checkDealExists = async (title: string, listUrl: string): Promise<string | false> => {
+    try {
+      const res = await fetch(listUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filter: { "TITLE": title },
+          select: ["ID"]
+        })
+      });
+      const data = await res.json();
+      if (data.result && data.result.length > 0) {
+        return data.result[0].ID;
+      }
+      return false;
+    } catch (error) {
+      console.error("Erro verificação", error);
+      return false;
+    }
+  };
 
-        if (integration) {
-          setBitrixWebhook(integration.webhook_url || '');
-          setBitrixAccessCode(integration.access_code || ''); // <-- Define no estado
+  const handleStartProcess = () => {
+    if (!file) return toast.error('Por favor, selecione um arquivo primeiro.');
+    if (!webhookUrl) {
+      setShowAccessModal(true);
+      return;
+    }
+
+    toast.promise(
+      runImportLogic(),
+      {
+        loading: 'Processando arquivo...',
+        success: 'Processo finalizado!',
+        error: 'Erro ao processar.',
+      }
+    );
+  };
+
+  const runImportLogic = async () => {
+    setLoading(true);
+    setLogs([]);
+    setProgress(0);
+
+    try {
+      if (!webhookUrl) throw new Error("Webhook perdido. Recarregue a página.");
+
+      let data: any[] = [];
+      const ext = file!.name.split('.').pop()?.toLowerCase();
+
+      addLog(`📂 Lendo arquivo .${ext}...`);
+
+      if (ext === 'xlsx' || ext === 'xls') data = await parseExcel(file!);
+      else if (ext === 'csv') data = await parseCSV(file!);
+      else if (ext === 'xml') data = await parseXML(file!);
+      else throw new Error("Formato não suportado.");
+
+      if (!data || data.length === 0) throw new Error("O arquivo está vazio.");
+
+      addLog(`🔍 ${data.length} registros encontrados.`);
+
+      // --- CORREÇÃO DO ERRO 404 (Limpeza Robusta da URL) ---
+      // Remove 'profile.json', 'tasks.task.add', 'user.get' e barras finais
+      const baseApiUrl = webhookUrl
+        .replace(/\/profile\.json.*/, '')  // <--- ESSA LINHA CORRIGE O SEU ERRO
+        .replace(/\/tasks\.task\.add.*/, '')
+        .replace(/\/user\.get.*/, '')
+        .replace(/\/crm\.deal\.add.*/, '')
+        .replace(/\/$/, '');
+
+      const dealAddUrl = `${baseApiUrl}/crm.deal.add`;
+      const dealListUrl = `${baseApiUrl}/crm.deal.list`;
+      const commentUrl = `${baseApiUrl}/crm.timeline.comment.add`;
+
+      // Debug para você ver no console se a URL ficou limpa
+      console.log("URL Base Limpa:", baseApiUrl);
+
+      let success = 0;
+      let errors = 0;
+      let skipped = 0;
+
+      for (let i = 0; i < data.length; i++) {
+        const row = data[i];
+
+        const getVal = (keys: string[]) => {
+          const rowKeys = Object.keys(row);
+          for (const k of keys) {
+            if (row[k] !== undefined) return row[k];
+            const foundKey = rowKeys.find(rk => rk.toLowerCase().trim() === k.toLowerCase().trim());
+            if (foundKey && row[foundKey] !== undefined) return row[foundKey];
+          }
+          return '';
+        };
+
+        const orderId = getVal(['Nº de Pedido da Plataforma', 'N_de_Pedido_da_Plataforma']);
+        const productTitle = getVal(['Título', 'Titulo', 'Título do anúncio']);
+
+        if (!orderId) continue;
+
+        const finalTitle = orderId;
+        const existingId = await checkDealExists(finalTitle, dealListUrl);
+
+        if (existingId) {
+          addLog(`⚠️ [${orderId}] Ignorado: Já existe (ID: ${existingId})`);
+          skipped++;
+          setProgress(Math.round(((i + 1) / data.length) * 100));
+          continue;
         }
+
+        const returnDateRaw = getVal(['Tempo de Devolução', 'Tempo_de_Devolucao', 'Data da coleta']);
+        const returnDate = parseDate(returnDateRaw);
+        const deadline = new Date(returnDate);
+        deadline.setDate(deadline.getDate() + 15);
+
+        const fields: any = {
+          TITLE: finalTitle,
+          OPPORTUNITY: parseMoney(getVal(['Quantia de Reembolso', 'Quantia_de_Reembolso'])),
+          CURRENCY_ID: 'BRL',
+          CLOSEDATE: deadline.toISOString(),
+          CATEGORY_ID: 3,
+          OPENED: 'Y',
+          ASSIGNED_BY_ID: 1,
+
+          [BITRIX_FIELD_MAP.MARKETPLACE]: getListValue('MARKETPLACE', getVal(['Plataforma', 'Marketplace'])),
+          [BITRIX_FIELD_MAP.STORE_NAME]: getListValue('STORE_NAME', getVal(['Loja', 'Nome da Loja'])),
+          [BITRIX_FIELD_MAP.RETURN_TYPE]: getListValue('RETURN_TYPE', getVal(['Tipo de Devolução'])),
+          [BITRIX_FIELD_MAP.PLATFORM_STATUS]: getListValue('PLATFORM_STATUS', getVal(['Status na Plataforma'])),
+          [BITRIX_FIELD_MAP.TRACKING_NO]: getVal(['Nº de Rastreio', 'N_de_Rastreio']),
+          [BITRIX_FIELD_MAP.RETURN_ID]: getVal(['Pedidos de devolução', 'ID da devolução']),
+          [BITRIX_FIELD_MAP.RETURN_REASON]: getVal(['Devolução/Razão de Reembolso', 'Motivo do Reembolso']),
+          [BITRIX_FIELD_MAP.PRODUCT_SKU]: getVal(['Produtos/SKU de Variante']),
+          [BITRIX_FIELD_MAP.AD_TITLE]: productTitle,
+          [BITRIX_FIELD_MAP.AD_ID]: getVal(['ID do Anúncios']),
+          [BITRIX_FIELD_MAP.COLLECTION_DATE]: returnDate.toISOString(),
+          [BITRIX_FIELD_MAP.QUANTITY]: parseInt(getVal(['Qtd.', 'Quantidade'])) || 1,
+          [BITRIX_FIELD_MAP.SHIPPING_METHOD]: getVal(['Envio', 'Envio']),
+          [BITRIX_FIELD_MAP.REAL_REASON]: getVal(['Observação', 'Motivo Real da Devolução']),
+          [BITRIX_FIELD_MAP.STATE]: getVal(['Estado']),
+          [BITRIX_FIELD_MAP.VARIANT_VALUE]: parseMoney(getVal(['Valor de Variante'])),
+          [BITRIX_FIELD_MAP.PRICE]: parseMoney(getVal(['Preço'])),
+          [BITRIX_FIELD_MAP.LOGISTICS_STATUS]: getVal(['Estado de Logística']),
+        };
+
+        try {
+          const res = await fetch(dealAddUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fields })
+          });
+          const json = await res.json();
+
+          if (json.result) {
+            success++;
+            addLog(`✅ [${orderId}] Criado! ID: ${json.result}`);
+            await fetch(commentUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ fields: { ENTITY_ID: json.result, ENTITY_TYPE: 'DEAL', COMMENT: OPERATOR_INSTRUCTIONS } })
+            });
+          } else {
+            errors++;
+            const errMsg = json.error_description || JSON.stringify(json);
+            // Erro específico para o problema da URL
+            if (errMsg.includes('404')) {
+              addLog(`❌ [${orderId}] Erro 404: Webhook incorreto. Verifique se a URL termina com números.`);
+            } else {
+              addLog(`❌ [${orderId}] Erro Bitrix: ${errMsg}`);
+            }
+          }
+        } catch (e: any) {
+          errors++;
+          addLog(`❌ [${orderId}] Rede: ${e.message}`);
+        }
+
+        setProgress(Math.round(((i + 1) / data.length) * 100));
+        if (i % 5 === 0) await new Promise(r => setTimeout(r, 200));
       }
 
-      // Buscar Sessões (Simulado/Mock para exemplo visual, já que Supabase Auth Client não expõe sessions list facilmente no client-side free tier)
-      const { data: { session } } = await (supabase.auth as any).getSession();
-      setSessions([
-        {
-          id: session?.access_token.slice(-10),
-          device: 'Chrome on Windows',
-          location: 'São Paulo, BR',
-          ip: '192.168.1.1',
-          last_active: 'Agora',
-          current: true
-        }
-      ]);
+      toast((t) => (
+        <div className="flex flex-col gap-2 min-w-[200px]">
+          <div className="font-bold text-slate-800">Resumo da Importação</div>
+          <div className="text-sm space-y-1">
+            <div className="flex justify-between">
+              <span className="text-emerald-600 font-bold">✅ Criados:</span>
+              <span>{success}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-blue-600 font-bold">⚠️ Ignorados:</span>
+              <span>{skipped}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-red-600 font-bold">❌ Erros:</span>
+              <span>{errors}</span>
+            </div>
+          </div>
+          <button
+            className="mt-2 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs py-1 px-2 rounded w-full"
+            onClick={() => toast.dismiss(t.id)}
+          >
+            Fechar
+          </button>
+        </div>
+      ), { duration: 6000 });
 
     } catch (error: any) {
-      console.error('Erro ao carregar dados:', error.message);
+      addLog(`⛔ ERRO: ${error.message}`);
+      toast.error(error.message);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleUpdateProfile = async () => {
-    try {
-      setSaving(true);
-      const { error } = await (supabase.auth as any).updateUser({
-        data: { full_name: profile.full_name }
-      });
-
-      if (error) throw error;
-
-      // Atualizar também na tabela profiles se existir
-      await supabase.from('profiles').upsert({
-        id: user.id,
-        full_name: profile.full_name,
-        role: profile.role,
-        updated_at: new Date()
-      });
-
-      toast.success('Perfil atualizado com sucesso!');
-    } catch (error: any) {
-      toast.error('Erro ao atualizar perfil: ' + error.message);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleSaveBitrix = async () => {
-    if (!bitrixWebhook.startsWith('http')) {
-      return toast.error('Insira uma URL de Webhook válida.');
-    }
-
-    try {
-      setSaving(true);
-      const { error } = await supabase
-        .from('integrations')
-        .upsert({
-          user_id: user.id,
-          service_name: 'bitrix24',
-          webhook_url: bitrixWebhook,
-          access_code: bitrixAccessCode.toUpperCase(), // <-- Salva sempre em MAIÚSCULO
-          is_active: true
-        }, { onConflict: 'user_id, service_name' });
-
-      if (error) throw error;
-      toast.success('Integração Bitrix24 salva!');
-      setBitrixAccessCode(prev => prev.toUpperCase()); // Atualiza input visualmente
-    } catch (error: any) {
-      toast.error('Erro ao salvar integração: ' + error.message);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleChangePassword = async () => {
-    try {
-      setSaving(true);
-      const { error } = await (supabase.auth as any).updateUser({ password: newPassword });
-      if (error) throw error;
-      toast.success('Senha alterada com sucesso!');
-      setShowPasswordModal(false);
-      setNewPassword('');
-    } catch (error: any) {
-      toast.error('Erro ao alterar senha: ' + error.message);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const copyPublicLink = () => {
-    const url = `${window.location.origin}/#/import-returns`;
-    navigator.clipboard.writeText(url);
-    toast.success('Link copiado para a área de transferência!');
-  };
-
-  if (loading) return <div className="p-10 text-center text-slate-500">Carregando configurações...</div>;
-
   return (
-    <div className="max-w-5xl mx-auto space-y-8 pb-20">
+    <div className="max-w-4xl mx-auto space-y-6">
       <Toaster position="top-right" />
 
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">Configurações</h2>
-          <p className="text-slate-500 text-sm">Gerencie sua conta e preferências do sistema.</p>
-        </div>
+      <div className="space-y-1">
+        <h2 className="text-3xl font-black text-slate-900 dark:text-white">Importar Devoluções</h2>
+        <p className="text-slate-500 text-sm">Área Pública - Requer Código de Acesso.</p>
       </div>
 
-      <div className="flex flex-col lg:flex-row gap-8">
-        {/* Sidebar de Navegação */}
-        <nav className="lg:w-64 flex-shrink-0 space-y-1">
-          {[
-            { id: 'profile', icon: 'person', label: 'Meu Perfil' },
-            { id: 'security', icon: 'lock', label: 'Segurança & Login' },
-            { id: 'integrations', icon: 'hub', label: 'Integrações' }, // Bitrix24 aqui
-            { id: 'preferences', icon: 'tune', label: 'Preferências' },
-          ].map((item) => (
-            <button
-              key={item.id}
-              onClick={() => setActiveSection(item.id)}
-              className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-bold rounded-lg transition-all ${activeSection === item.id
-                  ? 'bg-white dark:bg-slate-800 text-primary shadow-sm ring-1 ring-slate-200 dark:ring-slate-700'
-                  : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800/50'
-                }`}
-            >
-              <span className="material-symbols-outlined text-[20px]">{item.icon}</span>
-              {item.label}
-            </button>
-          ))}
-        </nav>
-
-        {/* Área de Conteúdo */}
-        <div className="flex-1 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-6 lg:p-8">
-
-          {/* --- SEÇÃO: PERFIL --- */}
-          {activeSection === 'profile' && (
-            <div className="space-y-6 animate-in fade-in duration-300">
-              <div className="flex items-center gap-4">
-                <div className="relative group cursor-pointer">
-                  <div className="w-20 h-20 rounded-full bg-slate-200 overflow-hidden border-2 border-white dark:border-slate-800 shadow-md">
-                    {user?.user_metadata?.avatar_url ? (
-                      <img src={user.user_metadata.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-slate-400 bg-slate-100 dark:bg-slate-800">
-                        <span className="material-symbols-outlined text-3xl">person</span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                    <span className="material-symbols-outlined text-white text-sm">edit</span>
-                  </div>
-                  <input type="file" ref={fileInputRef} className="hidden" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">Foto de Perfil</h3>
-                  <p className="text-xs text-slate-500">JPG, GIF ou PNG. Max 1MB.</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-500 uppercase">Nome Completo</label>
-                  <input
-                    type="text"
-                    value={profile.full_name}
-                    onChange={(e) => setProfile({ ...profile, full_name: e.target.value })}
-                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-medium focus:ring-2 focus:ring-primary/20 outline-none"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-500 uppercase">Email</label>
-                  <input
-                    type="email"
-                    value={profile.email}
-                    disabled
-                    className="w-full px-4 py-2.5 bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-500 cursor-not-allowed"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-500 uppercase">Cargo / Função</label>
-                  <input
-                    type="text"
-                    value={profile.role}
-                    disabled
-                    className="w-full px-4 py-2.5 bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-500 cursor-not-allowed"
-                  />
-                </div>
-              </div>
-
-              <div className="pt-4 flex justify-end">
-                <button
-                  onClick={handleUpdateProfile}
-                  disabled={saving}
-                  className="px-6 py-2.5 bg-primary text-white font-bold rounded-lg shadow-lg hover:opacity-90 transition-opacity disabled:opacity-50"
-                >
-                  {saving ? 'Salvando...' : 'Salvar Alterações'}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* --- SEÇÃO: INTEGRAÇÕES (BITRIX & CÓDIGO) --- */}
-          {activeSection === 'integrations' && (
-            <div className="space-y-8 animate-in fade-in duration-300">
-
-              {/* Card Webhook */}
-              <div className="space-y-4">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-10 h-10 bg-blue-500/10 rounded-lg flex items-center justify-center text-blue-500">
-                    <span className="material-symbols-outlined">api</span>
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-bold text-slate-900 dark:text-white">Bitrix24 Webhook</h3>
-                    <p className="text-xs text-slate-500">Conecte seu CRM para sincronizar tarefas e devoluções.</p>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-500 uppercase">Webhook URL (Inbound)</label>
-                  <input
-                    type="text"
-                    placeholder="https://seu-bitrix.bitrix24.com.br/rest/1/xxxx..."
-                    value={bitrixWebhook}
-                    onChange={(e) => setBitrixWebhook(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-mono focus:ring-2 focus:ring-primary/20 outline-none"
-                  />
-                  <p className="text-[10px] text-slate-400">
-                    Certifique-se de que o webhook tem permissões: <strong>task, crm, user</strong>.
-                  </p>
-                </div>
-              </div>
-
-              <div className="border-t border-slate-100 dark:border-slate-800 my-6"></div>
-
-              {/* Card Acesso Público */}
-              <div className="space-y-4">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-10 h-10 bg-emerald-500/10 rounded-lg flex items-center justify-center text-emerald-500">
-                    <span className="material-symbols-outlined">public</span>
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-bold text-slate-900 dark:text-white">Importação Pública</h3>
-                    <p className="text-xs text-slate-500">Configure o acesso para a página de importação de devoluções.</p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Campo Código de Acesso */}
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-500 uppercase">Código de Acesso da Loja</label>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        placeholder="Ex: LOJA01"
-                        value={bitrixAccessCode}
-                        onChange={(e) => setBitrixAccessCode(e.target.value.toUpperCase())}
-                        className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-bold tracking-widest focus:ring-2 focus:ring-primary/20 outline-none uppercase"
-                      />
-                      <span className="absolute right-3 top-2.5 material-symbols-outlined text-slate-400 text-lg">vpn_key</span>
-                    </div>
-                    <p className="text-[10px] text-slate-400">
-                      Este código será solicitado a qualquer pessoa que tentar usar a página de importação pública.
-                    </p>
-                  </div>
-
-                  {/* Campo Link Público (Apenas Leitura/Cópia) */}
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-500 uppercase">Link da Página Pública</label>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        readOnly
-                        value={`${window.location.origin}/#/import-returns`}
-                        className="flex-1 px-4 py-2.5 bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-500 cursor-not-allowed"
-                      />
-                      <button
-                        onClick={copyPublicLink}
-                        className="px-3 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 rounded-lg text-slate-600 dark:text-slate-300 transition-colors"
-                        title="Copiar Link"
-                      >
-                        <span className="material-symbols-outlined text-lg">content_copy</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-4 flex justify-end">
-                <button
-                  onClick={handleSaveBitrix}
-                  disabled={saving}
-                  className="px-6 py-2.5 bg-primary text-white font-bold rounded-lg shadow-lg hover:opacity-90 transition-opacity disabled:opacity-50"
-                >
-                  {saving ? 'Salvando...' : 'Salvar Configurações'}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* --- SEÇÃO: SEGURANÇA --- */}
-          {activeSection === 'security' && (
-            <div className="space-y-8 animate-in fade-in duration-300">
-              <div className="space-y-4">
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Alterar Senha</h3>
-                <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-slate-700">
-                  <div>
-                    <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Senha de Acesso</p>
-                    <p className="text-xs text-slate-500">Recomendamos usar uma senha forte.</p>
-                  </div>
-                  <button onClick={() => setShowPasswordModal(true)} className="text-sm font-bold text-primary hover:underline">
-                    Alterar Senha
-                  </button>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Sessões Ativas</h3>
-                <div className="space-y-3">
-                  {sessions.map((sess, idx) => (
-                    <div key={idx} className="flex items-center justify-between p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg">
-                      <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center">
-                          <span className="material-symbols-outlined text-slate-500">devices</span>
-                        </div>
-                        <div>
-                          <p className="text-sm font-bold text-slate-900 dark:text-white">{sess.device}</p>
-                          <p className="text-xs text-slate-500">
-                            {sess.location} • {sess.ip} • {sess.current ? <span className="text-emerald-500 font-bold">Atual</span> : 'Outra Sessão'}
-                          </p>
-                        </div>
-                      </div>
-                      <span className="text-xs font-bold text-emerald-500 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-1 rounded">Ativo</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* --- SEÇÃO: PREFERÊNCIAS --- */}
-          {activeSection === 'preferences' && (
-            <div className="space-y-6 animate-in fade-in duration-300">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-500 uppercase">Idioma</label>
-                  <select
-                    value={preferences.language}
-                    onChange={(e) => setPreferences({ ...preferences, language: e.target.value })}
-                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-medium focus:ring-2 focus:ring-primary/20 outline-none"
-                  >
-                    <option>Português (BR)</option>
-                    <option>English (US)</option>
-                    <option>Español</option>
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-500 uppercase">Fuso Horário</label>
-                  <select
-                    value={preferences.timezone}
-                    onChange={(e) => setPreferences({ ...preferences, timezone: e.target.value })}
-                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-medium focus:ring-2 focus:ring-primary/20 outline-none"
-                  >
-                    <option>(GMT-03:00) America/Sao_Paulo</option>
-                    <option>(GMT-00:00) UTC</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="p-4 bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-200 text-sm rounded-lg flex gap-3">
-                <span className="material-symbols-outlined">info</span>
-                <span>As preferências são salvas localmente no seu navegador.</span>
-              </div>
-            </div>
-          )}
-
-        </div>
-      </div>
-
-      {/* Modal de Senha */}
-      {showPasswordModal && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-2xl max-w-sm w-full animate-in zoom-in-95 duration-200">
-            <h3 className="text-lg font-bold mb-1 text-slate-900 dark:text-white">Alterar Senha</h3>
-            <p className="text-sm text-slate-500 mb-4">Digite sua nova senha abaixo.</p>
-
+      <div className={`bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-8 shadow-sm transition-all ${!webhookUrl ? 'opacity-50 blur-[2px] pointer-events-none' : ''}`}>
+        <div className="flex flex-col items-center justify-center border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-lg p-10 bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+          <span className="material-symbols-outlined text-4xl text-slate-400 mb-3">upload_file</span>
+          <p className="text-sm text-slate-500 mb-4">Suporte para Excel (.xlsx), CSV e XML</p>
+          <label className="cursor-pointer">
+            <span className="bg-primary text-white px-6 py-2.5 rounded-lg font-bold shadow-lg shadow-primary/20 hover:opacity-90 transition">
+              Selecionar Arquivo
+            </span>
             <input
-              type="password"
-              placeholder="Nova senha"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-3 text-sm focus:ring-2 focus:ring-primary outline-none mb-4"
+              type="file"
+              accept=".xlsx, .xls, .csv, .xml"
+              className="hidden"
+              onChange={(e) => setFile(e.target.files?.[0] || null)}
             />
+          </label>
+          {file && (
+            <div className="mt-4 flex items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-700 px-4 py-2 rounded-full border shadow-sm">
+              <span className="material-symbols-outlined text-emerald-500">check_circle</span>
+              {file.name}
+            </div>
+          )}
+        </div>
 
-            <div className="flex gap-2">
-              <button
-                onClick={() => setShowPasswordModal(false)}
-                className="flex-1 py-2.5 font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleChangePassword}
-                disabled={saving || !newPassword}
-                className="flex-1 bg-primary text-white py-2.5 rounded-lg font-bold shadow-lg shadow-primary/20 hover:opacity-90 disabled:opacity-50"
-              >
-                {saving ? 'Salvando...' : 'Confirmar'}
-              </button>
+        <div className="mt-6 flex justify-between items-center">
+          <div className="text-xs text-slate-400">
+            {webhookUrl ? <span className="text-emerald-500 font-bold flex items-center gap-1"><span className="material-symbols-outlined text-sm">lock_open</span> Acesso Liberado</span> : <span>* Será necessário informar o código da loja.</span>}
+          </div>
+          <button
+            onClick={handleStartProcess}
+            disabled={loading || !file}
+            className="px-8 py-3 bg-emerald-600 text-white rounded-lg font-bold shadow-lg hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-2 transition-all transform active:scale-95"
+          >
+            {loading ? <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></span> : <span className="material-symbols-outlined">rocket_launch</span>}
+            {loading ? `Processando ${progress}%` : 'Iniciar Importação'}
+          </button>
+        </div>
+      </div>
+
+      <div className="bg-slate-950 text-emerald-400 rounded-xl p-4 h-64 overflow-y-auto font-mono text-xs border border-slate-800 shadow-inner custom-scrollbar">
+        {logs.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full text-slate-600">
+            <span className="material-symbols-outlined text-3xl mb-2 opacity-50">terminal</span>
+            <p>Aguardando início...</p>
+          </div>
+        ) : logs.map((log, i) => (
+          <div key={i} className={`border-b border-slate-800/50 py-1 ${log.includes('❌') ? 'text-rose-400' : ''} ${log.includes('⚠️') ? 'text-yellow-400' : ''} ${log.includes('⛔') ? 'text-red-500 font-bold' : ''}`}>
+            {log}
+          </div>
+        ))}
+      </div>
+
+      {showAccessModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden p-6 animate-in zoom-in-95 duration-200">
+            <div className="text-center mb-6">
+              <div className="mx-auto w-12 h-12 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mb-3">
+                <span className="material-symbols-outlined text-blue-600 dark:text-blue-400 text-2xl">lock</span>
+              </div>
+              <h3 className="text-xl font-bold text-slate-900 dark:text-white">Acesso Restrito</h3>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Informe o código da loja para liberar o sistema.</p>
+            </div>
+
+            <div className="space-y-4">
+              <input
+                type="text"
+                placeholder="Ex: LOJA01"
+                className="w-full px-4 py-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-center text-lg font-bold tracking-widest uppercase focus:ring-2 focus:ring-primary outline-none"
+                value={accessCode}
+                onChange={e => setAccessCode(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && verifyAccessCode()}
+                autoFocus
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={verifyAccessCode}
+                  disabled={verifyingCode || !accessCode}
+                  className="w-full py-3 bg-primary text-white font-bold rounded-lg hover:opacity-90 disabled:opacity-50 shadow-lg shadow-primary/30"
+                >
+                  {verifyingCode ? 'Verificando...' : 'Liberar Acesso'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -475,4 +479,4 @@ const Settings: React.FC = () => {
   );
 };
 
-export default Settings;
+export default ImportReturns;
