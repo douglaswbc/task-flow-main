@@ -188,6 +188,16 @@ const ImportReturns: React.FC = () => {
     const addLog = (msg: string) => setLogs(p => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...p]);
 
     // --- VERIFICAÇÃO DO CÓDIGO ---
+    const getCleanWebhookUrl = (url: string) => {
+        if (!url) return '';
+        return url.trim()
+            .replace(/\/profile\.json.*/, '')
+            .replace(/\/tasks\.task\.add.*/, '')
+            .replace(/\/user\.get.*/, '')
+            .replace(/\/crm\.deal\.add.*/, '')
+            .replace(/\/$/, ''); // Removemos a barra final para padronizar internamente
+    };
+
     const verifyAccessCode = async () => {
         const normalizedCode = accessCode.trim().toLowerCase();
         if (!normalizedCode) return toast.error("Digite o código de acesso.");
@@ -197,7 +207,8 @@ const ImportReturns: React.FC = () => {
             const { data, error } = await supabase.rpc('get_webhook_by_code', { code_input: normalizedCode });
             if (error) throw error;
             if (data) {
-                setWebhookUrl(data);
+                // Armazenamos a URL já limpa para evitar problemas futuros
+                setWebhookUrl(getCleanWebhookUrl(data));
                 setShowAccessModal(false);
                 toast.success("Acesso liberado com sucesso!", { duration: 3000 });
                 addLog("🔓 Acesso liberado! Integração localizada.");
@@ -277,7 +288,8 @@ const ImportReturns: React.FC = () => {
 
             addLog(`🔍 ${data.length} registros encontrados.`);
 
-            const baseApiUrl = webhookUrl.replace(/\/tasks\.task\.add.*/, '').replace(/\/user\.get.*/, '').replace(/\/$/, '');
+            // Padronizamos a URL base para as verificações locais
+            const baseApiUrl = getCleanWebhookUrl(webhookUrl);
             const dealListUrl = `${baseApiUrl}/crm.deal.list`;
 
             let skippedCount = 0;
@@ -388,7 +400,8 @@ const ImportReturns: React.FC = () => {
                 const { data: edgeData, error: edgeError } = await supabase.functions.invoke('bitrix-bulk-import', {
                     body: {
                         items: batch,
-                        webhookUrl,
+                        // Garantimos que a URL enviada para a Edge Function use a barra final padrão do Bitrix
+                        webhookUrl: `${getCleanWebhookUrl(webhookUrl)}/`,
                         operatorInstructions: OPERATOR_INSTRUCTIONS
                     }
                 });
