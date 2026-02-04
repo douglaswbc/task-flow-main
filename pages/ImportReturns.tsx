@@ -235,14 +235,14 @@ const ImportReturns: React.FC = () => {
             addLog(`🔍 ${data.length} registros encontrados.`);
 
             const baseApiUrl = webhookUrl.replace(/\/tasks\.task\.add.*/, '').replace(/\/user\.get.*/, '').replace(/\/$/, '');
-            const dealAddUrl = `${baseApiUrl}/crm.deal.add`;
             const dealListUrl = `${baseApiUrl}/crm.deal.list`;
-            const commentUrl = `${baseApiUrl}/crm.timeline.comment.add`;
 
             let success = 0;
             let errors = 0;
             let skipped = 0;
+            let itemsToProcess = [];
 
+            addLog(`🔎 Verificando duplicidade de todos os itens...`);
             for (let i = 0; i < data.length; i++) {
                 const row = data[i];
 
@@ -267,7 +267,6 @@ const ImportReturns: React.FC = () => {
                 if (existingId) {
                     addLog(`⚠️ [${orderId}] Ignorado: Já existe (ID: ${existingId})`);
                     skipped++;
-                    setProgress(Math.round(((i + 1) / data.length) * 100));
                     continue;
                 }
 
@@ -276,62 +275,76 @@ const ImportReturns: React.FC = () => {
                 const deadline = new Date(returnDate);
                 deadline.setDate(deadline.getDate() + 15);
 
-                const fields: any = {
-                    TITLE: finalTitle,
-                    OPPORTUNITY: parseMoney(getVal(['Quantia de Reembolso', 'Quantia_de_Reembolso'])),
-                    CURRENCY_ID: 'BRL',
-                    CLOSEDATE: deadline.toISOString(),
-                    CATEGORY_ID: 3,
-                    OPENED: 'Y',
-                    ASSIGNED_BY_ID: 1,
+                itemsToProcess.push({
+                    orderId,
+                    fields: {
+                        TITLE: finalTitle,
+                        OPPORTUNITY: parseMoney(getVal(['Quantia de Reembolso', 'Quantia_de_Reembolso'])),
+                        CURRENCY_ID: 'BRL',
+                        CLOSEDATE: deadline.toISOString(),
+                        CATEGORY_ID: 3,
+                        OPENED: 'Y',
+                        ASSIGNED_BY_ID: 1,
 
-                    [BITRIX_FIELD_MAP.MARKETPLACE]: getListValue('MARKETPLACE', getVal(['Plataforma', 'Marketplace'])),
-                    [BITRIX_FIELD_MAP.STORE_NAME]: getListValue('STORE_NAME', getVal(['Loja', 'Nome da Loja'])),
-                    [BITRIX_FIELD_MAP.RETURN_TYPE]: getListValue('RETURN_TYPE', getVal(['Tipo de Devolução'])),
-                    [BITRIX_FIELD_MAP.PLATFORM_STATUS]: getListValue('PLATFORM_STATUS', getVal(['Status na Plataforma'])),
-                    [BITRIX_FIELD_MAP.TRACKING_NO]: getVal(['Nº de Rastreio', 'N_de_Rastreio']),
-                    [BITRIX_FIELD_MAP.RETURN_ID]: getVal(['Pedidos de devolução', 'ID da devolução']),
-                    [BITRIX_FIELD_MAP.RETURN_REASON]: getVal(['Devolução/Razão de Reembolso', 'Motivo do Reembolso']),
-                    [BITRIX_FIELD_MAP.PRODUCT_SKU]: getVal(['Produtos/SKU de Variante']),
-                    [BITRIX_FIELD_MAP.AD_TITLE]: productTitle,
-                    [BITRIX_FIELD_MAP.AD_ID]: getVal(['ID do Anúncios']),
-                    [BITRIX_FIELD_MAP.COLLECTION_DATE]: returnDate.toISOString(),
-                    [BITRIX_FIELD_MAP.QUANTITY]: parseInt(getVal(['Qtd.', 'Quantidade'])) || 1,
-                    [BITRIX_FIELD_MAP.SHIPPING_METHOD]: getVal(['Envio', 'Envio']),
-                    [BITRIX_FIELD_MAP.REAL_REASON]: getVal(['Observação', 'Motivo Real da Devolução']),
-                    [BITRIX_FIELD_MAP.STATE]: getVal(['Estado']),
-                    [BITRIX_FIELD_MAP.VARIANT_VALUE]: parseMoney(getVal(['Valor de Variante'])),
-                    [BITRIX_FIELD_MAP.PRICE]: parseMoney(getVal(['Preço'])),
-                    [BITRIX_FIELD_MAP.LOGISTICS_STATUS]: getVal(['Estado de Logística']),
-                };
-
-                try {
-                    const res = await fetch(dealAddUrl, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ fields })
-                    });
-                    const json = await res.json();
-
-                    if (json.result) {
-                        success++;
-                        addLog(`✅ [${orderId}] Criado! ID: ${json.result}`);
-                        await fetch(commentUrl, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ fields: { ENTITY_ID: json.result, ENTITY_TYPE: 'DEAL', COMMENT: OPERATOR_INSTRUCTIONS } })
-                        });
-                    } else {
-                        errors++;
-                        addLog(`❌ [${orderId}] Erro Bitrix: ${json.error_description || JSON.stringify(json)}`);
+                        [BITRIX_FIELD_MAP.MARKETPLACE]: getListValue('MARKETPLACE', getVal(['Plataforma', 'Marketplace'])),
+                        [BITRIX_FIELD_MAP.STORE_NAME]: getListValue('STORE_NAME', getVal(['Loja', 'Nome da Loja'])),
+                        [BITRIX_FIELD_MAP.RETURN_TYPE]: getListValue('RETURN_TYPE', getVal(['Tipo de Devolução'])),
+                        [BITRIX_FIELD_MAP.PLATFORM_STATUS]: getListValue('PLATFORM_STATUS', getVal(['Status na Plataforma'])),
+                        [BITRIX_FIELD_MAP.TRACKING_NO]: getVal(['Nº de Rastreio', 'N_de_Rastreio']),
+                        [BITRIX_FIELD_MAP.RETURN_ID]: getVal(['Pedidos de devolução', 'ID da devolução']),
+                        [BITRIX_FIELD_MAP.RETURN_REASON]: getVal(['Devolução/Razão de Reembolso', 'Motivo do Reembolso']),
+                        [BITRIX_FIELD_MAP.PRODUCT_SKU]: getVal(['Produtos/SKU de Variante']),
+                        [BITRIX_FIELD_MAP.AD_TITLE]: productTitle,
+                        [BITRIX_FIELD_MAP.AD_ID]: getVal(['ID do Anúncios']),
+                        [BITRIX_FIELD_MAP.COLLECTION_DATE]: returnDate.toISOString(),
+                        [BITRIX_FIELD_MAP.QUANTITY]: parseInt(getVal(['Qtd.', 'Quantidade'])) || 1,
+                        [BITRIX_FIELD_MAP.SHIPPING_METHOD]: getVal(['Envio', 'Envio']),
+                        [BITRIX_FIELD_MAP.REAL_REASON]: getVal(['Observação', 'Motivo Real da Devolução']),
+                        [BITRIX_FIELD_MAP.STATE]: getVal(['Estado']),
+                        [BITRIX_FIELD_MAP.VARIANT_VALUE]: parseMoney(getVal(['Valor de Variante'])),
+                        [BITRIX_FIELD_MAP.PRICE]: parseMoney(getVal(['Preço'])),
+                        [BITRIX_FIELD_MAP.LOGISTICS_STATUS]: getVal(['Estado de Logística']),
                     }
-                } catch (e: any) {
-                    errors++;
-                    addLog(`❌ [${orderId}] Rede: ${e.message}`);
-                }
+                });
+            }
 
-                setProgress(Math.round(((i + 1) / data.length) * 100));
-                if (i % 5 === 0) await new Promise(r => setTimeout(r, 200));
+            if (itemsToProcess.length === 0) {
+                addLog(`ℹ️ Nenhum novo item para importar.`);
+            } else {
+                addLog(`🚀 Iniciando importação cadenciada de ${itemsToProcess.length} itens via Edge Function...`);
+
+                let currentIndex = 0;
+                while (currentIndex < itemsToProcess.length) {
+                    const batch = itemsToProcess.slice(currentIndex);
+
+                    const { data: edgeData, error: edgeError } = await supabase.functions.invoke('bitrix-bulk-import', {
+                        body: {
+                            items: batch,
+                            webhookUrl,
+                            operatorInstructions: OPERATOR_INSTRUCTIONS
+                        }
+                    });
+
+                    if (edgeError) throw edgeError;
+
+                    const batchResults = edgeData.results || [];
+                    batchResults.forEach((r: any) => {
+                        if (r.success) {
+                            success++;
+                            addLog(`✅ [${r.orderId}] Criado! ID: ${r.id}`);
+                        } else {
+                            errors++;
+                            addLog(`❌ [${r.orderId}] Erro: ${r.error}`);
+                        }
+                    });
+
+                    currentIndex += batchResults.length;
+                    setProgress(Math.round((currentIndex / itemsToProcess.length) * 100));
+
+                    if (edgeData.status === 'partial') {
+                        addLog(`⏳ Limite de tempo atingido. Retomando o restante...`);
+                    }
+                }
             }
 
             // --- NOTIFICAÇÃO PERSONALIZADA FINAL (Estilo Recibo) ---
