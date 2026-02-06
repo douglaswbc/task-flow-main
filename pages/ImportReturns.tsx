@@ -29,7 +29,7 @@ const BITRIX_FIELD_MAP = {
 
 const LIST_VALUES_MAP: Record<string, Record<string, string | number>> = {
     MARKETPLACE: { "Shopee": 55, "Magalu": 57, "Kwai": 59, "Mercado Livre": 61, "TikTok": 63, "Amazon": 65 },
-    STORE_NAME: { "SHP - Styllo Casa": 51, "SHP - Ops comprei!": 53 },
+    STORE_NAME: { "SHP - Styllo Casa": 53, "SHP - Ops comprei!": 51 },
     RETURN_TYPE: { "RETURN_REFUND": 69, "REFUND": 67 },
     PLATFORM_STATUS: { "ACCEPTED": 71, "CANCELLED": 75 }
 };
