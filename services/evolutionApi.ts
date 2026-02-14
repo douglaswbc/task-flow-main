@@ -123,16 +123,11 @@ export const evolutionApi = {
                 integration: 'WHATSAPP-BAILEYS',
                 webhook: {
                     url: GLOBAL_WEBHOOK_URL,
+                    byEvents: false,
+                    base64: true,
                     enabled: true,
                     events: [
-                        'MESSAGES_UPSERT',
-                        'MESSAGES_UPDATE',
-                        'CONNECTION_UPDATE',
-                        'INSTANCE_UPDATE',
-                        'GROUPS_UPSERT',
-                        'GROUP_UPDATE',
-                        'GROUP_PARTICIPANTS_UPDATE'
-                    ],
+                        'MESSAGES_UPSERT'],
                 },
             };
 
