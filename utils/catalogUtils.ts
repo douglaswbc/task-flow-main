@@ -16,12 +16,12 @@ export const calculateFinalPrice = (
 };
 
 /**
- * Normaliza contatos brasileiros para o formato WhatsApp
- * - DDD < 30: 55 + DDD + 9 + número (13 dígitos) + @s.whatsapp.net
- * - DDD >= 30: 55 + DDD + número (12 dígitos) + @s.whatsapp.net
- * @param input - Número de telefone (pode conter apenas dígitos ou já estar formatado)
- * @returns Número normalizado no formato WhatsApp ou string vazia se inválido
- */
+    * Normaliza contatos brasileiros para o formato WhatsApp---
+        * - DDD < 30: 55 + DDD + 9 + número(13 dígitos) + @s.whatsapp.net
+            * - DDD >= 30: 55 + DDD + número(12 dígitos) + @s.whatsapp.net
+                * @param input - Número de telefone(pode conter apenas dígitos ou já estar formatado)
+                    * @returns Número normalizado no formato WhatsApp ou string vazia se inválido
+                        */
 export const normalizeContact = (input: string): string => {
     // Remove tudo que não é dígito
     const digitsOnly = input.replace(/\D/g, '');
