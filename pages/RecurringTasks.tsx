@@ -28,14 +28,8 @@ const RecurringTasks: React.FC = () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const response = await fetch(`${supabaseUrl}/functions/v1/bitrix-users`, {
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`
-        }
-      });
-      if (response.ok) {
-        const data = await response.json();
+      const { data, error } = await supabase.functions.invoke('bitrix-users');
+      if (!error && data) {
         setBitrixUsers(data);
       }
     } catch (error) {
