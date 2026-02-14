@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { supabase } from './lib/supabase';
 import Login from './pages/auth/Login';
 import Signup from './pages/auth/Signup';
@@ -14,6 +14,8 @@ import LogsHistory from './pages/LogsHistory';
 import Settings from './pages/Settings';
 import ImportReturns from './pages/ImportReturns';
 import ConfigureRecurrence from './pages/ConfigureRecurrence';
+import CatalogSettings from './pages/CatalogSettings';
+import Instances from './pages/Instances';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 
@@ -67,7 +69,7 @@ const App: React.FC = () => {
   );
 
   return (
-    <HashRouter>
+    <BrowserRouter>
       <Routes>
         {/* Rotas Públicas de Auth */}
         <Route path="/login" element={session ? <Navigate to="/" /> : <Login />} />
@@ -94,10 +96,12 @@ const App: React.FC = () => {
         <Route path="/recurring/config" element={<PrivateLayout><ConfigureRecurrence /></PrivateLayout>} />
         <Route path="/logs" element={<PrivateLayout><LogsHistory /></PrivateLayout>} />
         <Route path="/settings" element={<PrivateLayout><Settings /></PrivateLayout>} />
+        <Route path="/catalog-settings" element={<PrivateLayout><CatalogSettings /></PrivateLayout>} />
+        <Route path="/instances" element={<PrivateLayout><Instances /></PrivateLayout>} />
 
         <Route path="*" element={<Navigate to={session ? "/" : "/login"} />} />
       </Routes>
-    </HashRouter>
+    </BrowserRouter>
   );
 };
 

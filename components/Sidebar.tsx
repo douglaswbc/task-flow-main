@@ -20,6 +20,8 @@ const Sidebar: React.FC<SidebarProps> = ({ onLogout, user }) => {
   ];
 
   const managementItems = [
+    { to: '/catalog-settings', icon: 'inventory_2', label: 'Automação de Catálogos' },
+    { to: '/instances', icon: 'smartphone', label: 'Instâncias WhatsApp' },
     { to: '/settings', icon: 'settings', label: 'Configurações' },
   ];
 

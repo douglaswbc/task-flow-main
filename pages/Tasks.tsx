@@ -38,6 +38,11 @@ const Tasks: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const location = useLocation();
 
+  // Estados para paginação
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const itemsPerPage = 10;
+
   // Estados do Modal e Formulário
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
@@ -59,26 +64,24 @@ const Tasks: React.FC = () => {
   const [newChecklistItem, setNewChecklistItem] = useState('');
 
   useEffect(() => {
-    fetchTasks();
+    fetchTasks(page);
     fetchBitrixUsers();
 
     if (location.state?.searchTerm) {
       setSearchTerm(location.state.searchTerm);
     }
-  }, [location.state]);
+  }, [location.state, page]); // Recarrega ao mudar a página
 
   const fetchBitrixUsers = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
-      const response = await fetch('https://fkpxmqjvtrqzvcfhlcru.supabase.co/functions/v1/bitrix-users', {
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`
-        }
-      });
-      if (response.ok) {
-        const data = await response.json();
+      const { data, error } = await supabase.functions.invoke('bitrix-users');
+
+      if (error) throw error;
+
+      if (data) {
         setBitrixUsers(data);
       }
     } catch (error) {
@@ -86,22 +89,39 @@ const Tasks: React.FC = () => {
     }
   };
 
-  const fetchTasks = async () => {
+  const fetchTasks = async (pageNumber: number = 1) => {
     try {
       setLoading(true);
+
+      const from = (pageNumber - 1) * itemsPerPage;
+      const to = from + itemsPerPage - 1;
+
       const { data, count, error } = await supabase
         .from('tasks')
         .select('*', { count: 'exact' })
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .range(from, to);
 
       if (error) throw error;
       setTasks(data || []);
       setTotal(count || 0);
+
+      if (count) {
+        setTotalPages(Math.ceil(count / itemsPerPage));
+      }
     } catch (error) {
       console.error('Erro ao buscar tarefas:', error);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleNextPage = () => {
+    if (page < totalPages) setPage(prev => prev + 1);
+  };
+
+  const handlePrevPage = () => {
+    if (page > 1) setPage(prev => prev - 1);
   };
 
   const filteredTasks = tasks.filter(task =>
@@ -311,7 +331,7 @@ const Tasks: React.FC = () => {
         </div>
 
         <div className="flex gap-3 w-full md:w-auto">
-          <button onClick={fetchTasks} className="p-2.5 border rounded-lg hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 transition-colors" title="Recarregar">
+          <button onClick={() => fetchTasks(page)} className="p-2.5 border rounded-lg hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 transition-colors" title="Recarregar">
             <span className="material-symbols-outlined">refresh</span>
           </button>
           <button onClick={openNewTaskModal} className="flex-1 md:flex-none px-4 py-2.5 bg-primary text-white rounded-lg font-bold flex justify-center items-center gap-2 hover:opacity-90 transition-opacity">
@@ -392,6 +412,27 @@ const Tasks: React.FC = () => {
             </div>
           </div>
         ))}
+
+        {/* Rodapé com Paginação (Mobile) */}
+        {!loading && total > 0 && (
+          <div className="flex items-center justify-between bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <button
+              onClick={handlePrevPage}
+              disabled={page === 1}
+              className="p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50 transition-colors"
+            >
+              <span className="material-symbols-outlined">chevron_left</span>
+            </button>
+            <span className="text-xs font-bold text-slate-500">Página {page} de {totalPages}</span>
+            <button
+              onClick={handleNextPage}
+              disabled={page >= totalPages}
+              className="p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50 transition-colors"
+            >
+              <span className="material-symbols-outlined">chevron_right</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* --- MODO TABELA (DESKTOP - VISÍVEL APENAS EM TELAS MÉDIAS+) --- */}
@@ -500,6 +541,31 @@ const Tasks: React.FC = () => {
             ))}
           </tbody>
         </table>
+
+        {/* Rodapé com Paginação (Desktop) */}
+        {!loading && total > 0 && (
+          <div className="px-6 py-4 bg-slate-50 dark:bg-slate-800/50 flex items-center justify-between border-t border-slate-100 dark:border-slate-800">
+            <p className="text-xs text-slate-500">
+              Página <span className="font-bold text-slate-900 dark:text-white">{page}</span> de <span className="font-bold">{totalPages}</span>
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={handlePrevPage}
+                disabled={page === 1}
+                className="p-1.5 rounded border border-slate-200 dark:border-slate-700 hover:bg-white dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <span className="material-symbols-outlined text-lg">chevron_left</span>
+              </button>
+              <button
+                onClick={handleNextPage}
+                disabled={page >= totalPages}
+                className="p-1.5 rounded border border-slate-200 dark:border-slate-700 hover:bg-white dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <span className="material-symbols-outlined text-lg">chevron_right</span>
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* --- MODAL DE CRIAR/EDITAR --- */}

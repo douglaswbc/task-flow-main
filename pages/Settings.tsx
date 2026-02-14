@@ -4,7 +4,8 @@ import toast, { Toaster } from 'react-hot-toast';
 
 const Settings: React.FC = () => {
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [savingIntegration, setSavingIntegration] = useState(false);
 
   // Auth User
   const [user, setUser] = useState<any>(null);
@@ -21,7 +22,8 @@ const Settings: React.FC = () => {
     id: '',
     webhook_url: '',
     access_code: '',
-    is_active: true
+    is_active: true,
+    catalog_automation_active: true
   });
 
   useEffect(() => {
@@ -46,7 +48,7 @@ const Settings: React.FC = () => {
       if (integrationRes.data) {
         setIntegration(integrationRes.data);
       } else {
-        setIntegration(prev => ({ ...prev, webhook_url: '', access_code: '' }));
+        setIntegration(prev => ({ ...prev, webhook_url: '', access_code: '', catalog_automation_active: true }));
       }
 
     } catch (error: any) {
@@ -58,28 +60,28 @@ const Settings: React.FC = () => {
   };
 
   const handleSaveProfile = async () => {
-    setSaving(true);
+    setSavingProfile(true);
     try {
       const { error } = await supabase
         .from('profiles')
-        .update({
+        .upsert({
+          id: user.id,
           full_name: profile.full_name,
           avatar_url: profile.avatar_url,
           updated_at: new Date().toISOString()
-        })
-        .eq('id', user.id);
+        });
 
       if (error) throw error;
       toast.success('Perfil atualizado com sucesso!');
     } catch (error: any) {
       toast.error('Erro ao salvar perfil: ' + error.message);
     } finally {
-      setSaving(false);
+      setSavingProfile(false);
     }
   };
 
   const handleSaveIntegration = async () => {
-    setSaving(true);
+    setSavingIntegration(true);
     try {
       const cleanedWebhook = integration.webhook_url.trim()
         .replace(/\/profile\.json.*/, '')
@@ -95,7 +97,8 @@ const Settings: React.FC = () => {
           .update({
             webhook_url: cleanedWebhook,
             access_code: integration.access_code,
-            is_active: integration.is_active
+            is_active: integration.is_active,
+            catalog_automation_active: integration.catalog_automation_active
           })
           .eq('id', integration.id);
         if (error) throw error;
@@ -108,7 +111,8 @@ const Settings: React.FC = () => {
             service_name: 'bitrix24',
             webhook_url: cleanedWebhook,
             access_code: integration.access_code,
-            is_active: true
+            is_active: true,
+            catalog_automation_active: integration.catalog_automation_active
           }])
           .select()
           .single();
@@ -119,12 +123,12 @@ const Settings: React.FC = () => {
     } catch (error: any) {
       toast.error('Erro ao salvar integração: ' + error.message);
     } finally {
-      setSaving(false);
+      setSavingIntegration(false);
     }
   };
 
   const copyPublicUrl = () => {
-    const url = window.location.origin + '/#/import-returns';
+    const url = window.location.origin + '/import-returns';
     navigator.clipboard.writeText(url);
     toast.success('URL pública copiada!');
   };
@@ -188,10 +192,10 @@ const Settings: React.FC = () => {
             <div className="pt-2">
               <button
                 onClick={handleSaveProfile}
-                disabled={saving}
-                className="w-full py-3.5 bg-slate-900 dark:bg-emerald-600 text-white font-black rounded-xl hover:opacity-90 active:scale-[0.98] transition-all text-xs uppercase tracking-widest shadow-xl shadow-slate-900/10"
+                disabled={savingProfile}
+                className="w-full py-3.5 bg-slate-900 dark:bg-emerald-600 text-white font-black rounded-xl hover:opacity-90 active:scale-[0.98] transition-all text-xs uppercase tracking-widest shadow-xl shadow-slate-900/10 disabled:opacity-50"
               >
-                {saving ? 'Salvando...' : 'Salvar Perfil'}
+                {savingProfile ? 'Salvando...' : 'Salvar Perfil'}
               </button>
             </div>
           </div>
@@ -228,16 +232,28 @@ const Settings: React.FC = () => {
                 />
                 <span className="absolute right-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-slate-300 pointer-events-none">vpn_key</span>
               </div>
-              <p className="text-[10px] text-slate-400 mt-1 pl-1 italic">* Use este código para liberar a página pública de importação.</p>
+            </div>
+
+            <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-100 dark:border-slate-800">
+              <div className="space-y-0.5">
+                <label className="text-sm font-bold text-slate-800 dark:text-white">Automação de Catálogo</label>
+                <p className="text-[10px] text-slate-500">Ativar processamento automático de arquivos.</p>
+              </div>
+              <button
+                onClick={() => setIntegration({ ...integration, catalog_automation_active: !integration.catalog_automation_active })}
+                className={`w-12 h-6 rounded-full transition-colors relative ${integration.catalog_automation_active ? 'bg-primary' : 'bg-slate-300'}`}
+              >
+                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${integration.catalog_automation_active ? 'left-7' : 'left-1'}`} />
+              </button>
             </div>
 
             <div className="pt-2">
               <button
                 onClick={handleSaveIntegration}
-                disabled={saving}
-                className="w-full py-3.5 bg-primary text-white font-black rounded-xl hover:opacity-90 active:scale-[0.98] transition-all text-xs uppercase tracking-widest shadow-xl shadow-primary/20"
+                disabled={savingIntegration}
+                className="w-full py-3.5 bg-primary text-white font-black rounded-xl hover:opacity-90 active:scale-[0.98] transition-all text-xs uppercase tracking-widest shadow-xl shadow-primary/20 disabled:opacity-50"
               >
-                {saving ? 'Salvando...' : 'Salvar Autenticação'}
+                {savingIntegration ? 'Salvando...' : 'Salvar Autenticação'}
               </button>
             </div>
           </div>
@@ -267,7 +283,7 @@ const Settings: React.FC = () => {
               Copiar Link Público
             </button>
             <a
-              href="/#/import-returns"
+              href="/import-returns"
               target="_blank"
               className="flex items-center gap-2 px-6 py-3 bg-slate-700/50 text-white font-bold rounded-xl hover:bg-slate-700 transition"
             >

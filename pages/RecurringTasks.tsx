@@ -2,12 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useLocation, useNavigate } from 'react-router-dom';
 
+const ITEMS_PER_PAGE = 10;
+
 const RecurringTasks: React.FC = () => {
   const navigate = useNavigate();
   const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [bitrixUsers, setBitrixUsers] = useState<{ id: string; name: string; work_position: string }[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
   const location = useLocation();
 
   useEffect(() => {
@@ -17,14 +21,15 @@ const RecurringTasks: React.FC = () => {
     if (location.state?.searchTerm) {
       setSearchTerm(location.state.searchTerm);
     }
-  }, [location.state]);
+  }, [location.state, currentPage]);
 
   const fetchBitrixUsers = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
-      const response = await fetch('https://fkpxmqjvtrqzvcfhlcru.supabase.co/functions/v1/bitrix-users', {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const response = await fetch(`${supabaseUrl}/functions/v1/bitrix-users`, {
         headers: {
           'Authorization': `Bearer ${session.access_token}`
         }
@@ -41,10 +46,24 @@ const RecurringTasks: React.FC = () => {
   const fetchRecurringTasks = async () => {
     try {
       setLoading(true);
+
+      // Get total count first
+      const countResult = await supabase
+        .from('recurring_tasks')
+        .select('*', { count: 'exact', head: true });
+
+      if (countResult.error) throw countResult.error;
+      setTotalCount(countResult.count || 0);
+
+      // Fetch paginated data
+      const from = (currentPage - 1) * ITEMS_PER_PAGE;
+      const to = from + ITEMS_PER_PAGE - 1;
+
       const { data, error } = await supabase
         .from('recurring_tasks')
         .select('*')
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .range(from, to);
 
       if (error) throw error;
       setTasks(data || []);
@@ -80,6 +99,7 @@ const RecurringTasks: React.FC = () => {
       if (error) throw error;
 
       setTasks(tasks.filter(t => t.id !== id));
+      fetchRecurringTasks(); // Refresh to update pagination if needed
     } catch (error) {
       console.error('Erro ao excluir:', error);
       alert('Não foi possível excluir a tarefa.');
@@ -101,8 +121,16 @@ const RecurringTasks: React.FC = () => {
     return user ? user.name : 'ID: ' + id;
   };
 
+  const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);
+
+  const handlePageChange = (newPage: number) => {
+    if (newPage >= 1 && newPage <= totalPages) {
+      setCurrentPage(newPage);
+    }
+  };
+
   return (
-    <div className="max-w-6xl mx-auto space-y-8 px-4 sm:px-6 lg:px-8">
+    <div className="max-w-6xl mx-auto space-y-8 px-4 sm:px-6 lg:px-8 pb-8">
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
           <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">Tarefas Recorrentes</h2>
@@ -126,7 +154,7 @@ const RecurringTasks: React.FC = () => {
             className="w-full pl-10 pr-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary outline-none"
           />
         </div>
-        <p className="text-xs text-slate-500">{filteredTasks.length} recorrência(s) encontrada(s)</p>
+        <p className="text-xs text-slate-500">{totalCount} recorrência(s) encontrada(s)</p>
       </div>
 
       <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
@@ -144,9 +172,9 @@ const RecurringTasks: React.FC = () => {
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
               {loading ? (
-                <tr><td colSpan={5} className="py-8 sm:py-10 text-center text-slate-400">Buscando automações...</td></tr>
+                <tr><td colSpan={6} className="py-8 sm:py-10 text-center text-slate-400">Buscando automações...</td></tr>
               ) : filteredTasks.length === 0 ? (
-                <tr><td colSpan={5} className="py-8 sm:py-10 text-center text-slate-400 italic">Nenhuma recorrência encontrada.</td></tr>
+                <tr><td colSpan={6} className="py-8 sm:py-10 text-center text-slate-400 italic">Nenhuma recorrência encontrada.</td></tr>
               ) : filteredTasks.map((task) => (
                 <tr
                   key={task.id}
@@ -222,6 +250,29 @@ const RecurringTasks: React.FC = () => {
           </table>
         </div>
       </div>
+
+      {/* Paginação */}
+      {totalPages > 1 && (
+        <div className="flex justify-between items-center mt-4 border-t pt-4 dark:border-slate-700">
+          <button
+            onClick={() => handlePageChange(currentPage - 1)}
+            disabled={currentPage === 1}
+            className="px-4 py-2 text-sm font-medium text-slate-600 bg-white border border-slate-300 rounded-md hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300"
+          >
+            Anterior
+          </button>
+          <span className="text-sm text-slate-600 dark:text-slate-300">
+            Página {currentPage} de {totalPages}
+          </span>
+          <button
+            onClick={() => handlePageChange(currentPage + 1)}
+            disabled={currentPage === totalPages}
+            className="px-4 py-2 text-sm font-medium text-slate-600 bg-white border border-slate-300 rounded-md hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300"
+          >
+            Próxima
+          </button>
+        </div>
+      )}
     </div>
   );
 };

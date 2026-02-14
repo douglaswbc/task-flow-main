@@ -44,7 +44,7 @@ const Login: React.FC = () => {
           <h2 className="text-gray-900 dark:text-white text-lg font-bold tracking-tight">TaskFlow</h2>
         </div>
       </header>
-      
+
       <main className="flex-1 flex flex-col items-center justify-center p-6 md:p-12 relative overflow-hidden">
         <div className="w-full max-w-[440px] z-10">
           <div className="bg-white dark:bg-[#242830] p-8 md:p-10 rounded-xl shadow-xl border border-gray-100 dark:border-gray-800">
@@ -67,13 +67,13 @@ const Login: React.FC = () => {
                 <label className="text-[13px] font-semibold text-gray-700 dark:text-gray-300 ml-1">E-mail</label>
                 <div className="relative group">
                   <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-[20px] group-focus-within:text-primary transition-colors">mail</span>
-                  <input 
-                    className="w-full pl-11 pr-4 py-3 rounded-lg border border-gray-200 dark:border-gray-700 dark:bg-background-dark dark:text-white focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none transition-all text-sm" 
-                    placeholder="seu@email.com" 
-                    type="email" 
+                  <input
+                    className="w-full pl-11 pr-4 py-3 rounded-lg border border-gray-200 dark:border-gray-700 dark:bg-background-dark dark:text-white focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none transition-all text-sm"
+                    placeholder="seu@email.com"
+                    type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    required 
+                    required
                   />
                 </div>
               </div>
@@ -84,16 +84,16 @@ const Login: React.FC = () => {
                 </div>
                 <div className="relative group">
                   <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-[20px] group-focus-within:text-primary transition-colors">lock</span>
-                  <input 
-                    className="w-full pl-11 pr-11 py-3 rounded-lg border border-gray-200 dark:border-gray-700 dark:bg-background-dark dark:text-white focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none transition-all text-sm" 
-                    placeholder="••••••••" 
+                  <input
+                    className="w-full pl-11 pr-11 py-3 rounded-lg border border-gray-200 dark:border-gray-700 dark:bg-background-dark dark:text-white focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none transition-all text-sm"
+                    placeholder="••••••••"
                     type={showPassword ? "text" : "password"}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    required 
+                    required
                   />
-                  <button 
-                    type="button" 
+                  <button
+                    type="button"
                     className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-primary transition-colors"
                     onClick={toggleShowPassword}
                   >
@@ -103,8 +103,8 @@ const Login: React.FC = () => {
                   </button>
                 </div>
               </div>
-              <button 
-                type="submit" 
+              <button
+                type="submit"
                 disabled={loading}
                 className="w-full bg-primary hover:bg-primary/90 text-white font-bold py-3.5 rounded-lg transition-all flex items-center justify-center gap-2 group shadow-lg shadow-primary/20 mt-2 disabled:opacity-50"
               >
@@ -117,13 +117,15 @@ const Login: React.FC = () => {
               </button>
             </form>
 
+            {/* 
             <div className="mt-8 text-center">
               <p className="text-sm text-gray-500 dark:text-gray-400">
                 Ainda não tem conta? <Link className="text-primary font-bold hover:underline" to="/signup">Criar conta grátis</Link>
               </p>
             </div>
+            */}
           </div>
-          
+
           <div className="mt-8 flex flex-col items-center gap-4">
             <div className="flex items-center gap-6 text-[12px] font-medium text-gray-400">
               <Link to="/privacy" className="hover:text-primary">Privacidade</Link>

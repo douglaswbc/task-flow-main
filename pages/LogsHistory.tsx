@@ -33,7 +33,7 @@ const LogsHistory: React.FC = () => {
       const { data, count, error } = await supabase
         .from('automation_logs')
         .select('*', { count: 'exact' })
-        .order('created_at', { ascending: false })
+        .order('execution_date', { ascending: false })
         .range(from, to);
 
       if (error) throw error;
