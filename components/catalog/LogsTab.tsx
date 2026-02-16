@@ -8,7 +8,8 @@ import {
     XCircle,
     ChevronDown,
     ChevronRight,
-    Package
+    Package,
+    FileText
 } from 'lucide-react';
 import { ProcessingLog, CatalogCategory } from '../../types';
 import ProductManager from './ProductManager';
@@ -189,18 +190,17 @@ const LogsTab: React.FC<LogsTabProps> = ({
                                                     {log.file_url ? (
                                                         <div
                                                             onClick={() => window.open(log.file_url, '_blank')}
-                                                            className="relative w-16 h-16 rounded-lg overflow-hidden border-2 border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 cursor-pointer hover:border-primary transition-colors group"
+                                                            className="relative w-14 h-14 rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 cursor-pointer hover:border-primary/50 hover:shadow-lg hover:shadow-primary/5 transition-all group flex flex-col items-center justify-center gap-0.5"
                                                         >
-                                                            <iframe
-                                                                src={log.file_url}
-                                                                className="w-full h-full pointer-events-none scale-150 origin-top-left opacity-80 group-hover:opacity-100 transition-opacity"
-                                                                title="PDF Preview"
-                                                            />
-                                                            <div className="absolute inset-0 bg-black/5 group-hover:bg-transparent transition-colors" />
+                                                            <div className="absolute top-0 right-0 w-4 h-4 bg-primary/10 rounded-bl-lg flex items-center justify-center">
+                                                                <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+                                                            </div>
+                                                            <FileText className="w-6 h-6 text-red-500/80 group-hover:text-red-500 group-hover:scale-110 transition-all" />
+                                                            <span className="text-[9px] font-black text-slate-400 group-hover:text-primary transition-colors uppercase tracking-widest">PDF</span>
                                                         </div>
                                                     ) : (
-                                                        <div className="w-16 h-16 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
-                                                            <span className="text-xs text-slate-400">N/A</span>
+                                                        <div className="w-14 h-14 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-dashed border-slate-200 dark:border-slate-800 flex items-center justify-center font-black text-[10px] text-slate-300 uppercase">
+                                                            N/A
                                                         </div>
                                                     )}
                                                 </td>
@@ -228,15 +228,22 @@ const LogsTab: React.FC<LogsTabProps> = ({
 
                                                 {/* Badge de Origem */}
                                                 <td className="px-6 py-4">
-                                                    <span className={`
-                                                        inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold
-                                                        ${log.source_type === 'individual'
-                                                            ? 'bg-blue-100 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400'
-                                                            : 'bg-purple-100 dark:bg-purple-950/30 text-purple-700 dark:text-purple-400'}
-                                                    `}>
-                                                        {log.source_type === 'individual' ? '👤' : '👥'}
-                                                        {log.source_type === 'individual' ? 'Individual' : 'Grupo'}
-                                                    </span>
+                                                    <div className="flex flex-col gap-1.5">
+                                                        <span className={`
+                                                            inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-black uppercase tracking-wider
+                                                            ${log.source_type === 'individual'
+                                                                ? 'bg-blue-100 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400'
+                                                                : 'bg-indigo-100 dark:bg-indigo-950/30 text-indigo-700 dark:text-indigo-400'}
+                                                        `}>
+                                                            {log.source_type === 'individual' ? '👤' : '👥'}
+                                                            {log.source_type === 'individual' ? 'Individual' : 'Grupo'}
+                                                        </span>
+                                                        {log.source_instance && (
+                                                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                                                                🤖 {log.source_instance}
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 </td>
 
                                                 {/* Contato/Grupo */}

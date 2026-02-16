@@ -54,6 +54,7 @@ export interface WhatsAppGroup {
   name: string;
   whatsapp_id: string;
   is_active: boolean;
+  instance_name?: string | null;
   created_at: string;
 }
 
@@ -80,6 +81,7 @@ export interface ProcessingLog {
   source_type: 'individual' | 'group';
   contact_name: string | null;
   contact_jid: string | null;
+  source_instance: string | null;
   whatsapp_groups?: {
     name: string;
     whatsapp_id: string;

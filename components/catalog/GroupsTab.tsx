@@ -282,7 +282,16 @@ const GroupsTab: React.FC<GroupsTabProps> = ({ groups, onUpdate }) => {
                                             className="w-4 h-4 rounded border-slate-300"
                                         />
                                     </td>
-                                    <td className="px-6 py-4 text-sm font-medium text-slate-900 dark:text-white">{group.name}</td>
+                                    <td className="px-6 py-4">
+                                        <div className="space-y-1">
+                                            <p className="text-sm font-medium text-slate-900 dark:text-white">{group.name}</p>
+                                            {group.instance_name && (
+                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-900/50">
+                                                    🤖 {group.instance_name}
+                                                </span>
+                                            )}
+                                        </div>
+                                    </td>
                                     <td className="px-6 py-4 text-sm text-slate-500 dark:text-slate-400 font-mono">{group.whatsapp_id}</td>
                                     <td className="px-6 py-4">
                                         <button
