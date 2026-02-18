@@ -15,7 +15,7 @@ const Login: React.FC = () => {
     e.preventDefault();
     setLoading(true);
     setError(null);
-
+    //
     // Cast to any to bypass type error for signInWithPassword on SupabaseAuthClient
     const { error } = await (supabase.auth as any).signInWithPassword({
       email,
