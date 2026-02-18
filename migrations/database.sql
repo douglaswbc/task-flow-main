@@ -35,6 +35,11 @@ create table public.tasks (
   status text check (status in ('PENDING', 'IN_PROGRESS', 'COMPLETED', 'BACKLOG')) default 'PENDING',
   origin text check (origin in ('Manual', 'Recorrente')) default 'Manual',
   is_high_priority boolean default false,
+  external_id text, -- ID da tarefa no Bitrix24
+  attachments jsonb default '[]'::jsonb, -- Lista de anexos [{name, url, size, type}]
+  deadline timestamp with time zone,
+  checklist jsonb default '[]'::jsonb,
+  responsible_id text,
   created_at timestamp with time zone default now()
 );
 

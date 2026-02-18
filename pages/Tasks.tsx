@@ -20,6 +20,14 @@ interface Task {
   deadline: string | null;
   checklist: ChecklistItem[] | null;
   responsible_id: string | null;
+  attachments: {
+    name: string;
+    url: string;
+    type: string;
+    size: number;
+    storage_path?: string;
+    bitrix_file_id?: string;
+  }[] | null;
   created_at: string;
 }
 
@@ -48,8 +56,6 @@ const Tasks: React.FC = () => {
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [saving, setSaving] = useState(false);
   const [bitrixUsers, setBitrixUsers] = useState<{ id: string; name: string; work_position: string }[]>([]);
-
-  // Estado do formulário incluindo novos campos
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -57,8 +63,11 @@ const Tasks: React.FC = () => {
     is_high_priority: false,
     deadline: '',
     checklist: [] as ChecklistItem[],
-    responsible_id: ''
+    responsible_id: '',
+    attachments: [] as { name: string; url: string; type: string; size: number }[]
   });
+
+  const [uploading, setUploading] = useState(false);
 
   // Estado auxiliar para adicionar itens na checklist
   const [newChecklistItem, setNewChecklistItem] = useState('');
@@ -162,7 +171,8 @@ const Tasks: React.FC = () => {
       is_high_priority: false,
       deadline: '',
       checklist: [],
-      responsible_id: ''
+      responsible_id: '',
+      attachments: []
     });
     setNewChecklistItem('');
     setIsModalOpen(true);
@@ -182,7 +192,8 @@ const Tasks: React.FC = () => {
         return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
       })() : '',
       checklist: task.checklist || [],
-      responsible_id: task.responsible_id || ''
+      responsible_id: task.responsible_id || '',
+      attachments: task.attachments || []
     });
     setNewChecklistItem('');
     setIsModalOpen(true);
@@ -191,6 +202,57 @@ const Tasks: React.FC = () => {
   const closeModal = () => {
     setIsModalOpen(false);
     setEditingTask(null);
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    try {
+      setUploading(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Usuário não autenticado');
+
+      const newAttachments = [...formData.attachments];
+
+      for (const file of Array.from(files)) {
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${Math.random().toString(36).substring(2)}_${Date.now()}.${fileExt}`;
+        const filePath = `${user.id}/${fileName}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from('task-attachments')
+          .upload(filePath, file);
+
+        if (uploadError) throw uploadError;
+
+        const { data: { publicUrl } } = supabase.storage
+          .from('task-attachments')
+          .getPublicUrl(filePath);
+
+        newAttachments.push({
+          name: file.name,
+          url: publicUrl,
+          type: file.type,
+          size: file.size,
+          storage_path: filePath
+        });
+      }
+
+      setFormData(prev => ({ ...prev, attachments: newAttachments }));
+    } catch (error: any) {
+      console.error('Erro no upload:', error);
+      alert('Erro ao fazer upload do arquivo: ' + error.message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const removeAttachment = (index: number) => {
+    setFormData(prev => ({
+      ...prev,
+      attachments: prev.attachments.filter((_, i) => i !== index)
+    }));
   };
 
   // --- CRUD OPERATIONS ---
@@ -211,7 +273,8 @@ const Tasks: React.FC = () => {
         origin: editingTask ? editingTask.origin : 'Manual',
         deadline: formData.deadline ? new Date(formData.deadline).toISOString() : null,
         checklist: formData.checklist, // Supabase serializa JSONB automaticamente
-        responsible_id: formData.responsible_id || null
+        responsible_id: formData.responsible_id || null,
+        attachments: formData.attachments
       };
 
       let error;
@@ -478,6 +541,11 @@ const Tasks: React.FC = () => {
                             <span className="material-symbols-outlined text-[12px]">event</span> {new Date(task.deadline).toLocaleDateString()}
                           </span>
                         )}
+                        {task.attachments && task.attachments.length > 0 && (
+                          <span className="flex items-center gap-1 text-[10px] text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded w-fit">
+                            <span className="material-symbols-outlined text-[12px]">attach_file</span> {task.attachments.length}
+                          </span>
+                        )}
                         {task.checklist && task.checklist.length > 0 && (
                           <span className="flex items-center gap-1 text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded w-fit">
                             <span className="material-symbols-outlined text-[12px]">check_box</span> {task.checklist.length}
@@ -679,6 +747,46 @@ const Tasks: React.FC = () => {
                     <div className={`w-9 h-5 rounded-full relative transition-colors ${formData.is_high_priority ? 'bg-rose-500' : 'bg-slate-300 dark:bg-slate-600'}`}>
                       <div className={`absolute top-0.5 size-4 bg-white rounded-full transition-all shadow-sm ${formData.is_high_priority ? 'left-[18px]' : 'left-0.5'}`}></div>
                     </div>
+                  </div>
+                </div>
+
+                {/* Seção de Anexos */}
+                <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 block">Anexos</label>
+
+                  <div className="flex items-center justify-center w-full">
+                    <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all">
+                      <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                        <span className="material-symbols-outlined text-slate-400 mb-1">cloud_upload</span>
+                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-tighter">Clique para anexar arquivos</p>
+                      </div>
+                      <input type="file" className="hidden" multiple onChange={handleFileUpload} disabled={uploading} />
+                    </label>
+                  </div>
+
+                  {uploading && (
+                    <div className="mt-2 flex items-center gap-2 text-xs text-primary animate-pulse">
+                      <span className="animate-spin rounded-full h-3 w-3 border-b-2 border-primary"></span>
+                      Fazendo upload...
+                    </div>
+                  )}
+
+                  <div className="mt-3 space-y-2">
+                    {formData.attachments.map((file, idx) => (
+                      <div key={idx} className="flex items-center justify-between p-2 bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-lg group">
+                        <div className="flex items-center gap-2 overflow-hidden">
+                          <span className="material-symbols-outlined text-slate-400 text-sm">attach_file</span>
+                          <span className="text-xs text-slate-600 dark:text-slate-300 truncate font-medium">{file.name}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeAttachment(idx)}
+                          className="text-slate-400 hover:text-red-500 transition-colors"
+                        >
+                          <span className="material-symbols-outlined text-base">close</span>
+                        </button>
+                      </div>
+                    ))}
                   </div>
                 </div>
 

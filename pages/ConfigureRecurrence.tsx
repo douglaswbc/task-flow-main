@@ -18,8 +18,17 @@ const ConfigureRecurrence: React.FC = () => {
     checklist: [] as { title: string; is_completed: boolean }[],
     deadline_relative: 0, // minutos
     next_run: '', // ISO string
-    responsible_id: ''
+    responsible_id: '',
+    attachments: [] as {
+      name: string;
+      url: string;
+      type: string;
+      size: number;
+      storage_path?: string;
+    }[]
   });
+
+  const [uploading, setUploading] = useState(false);
 
   const [newChecklistItem, setNewChecklistItem] = useState('');
 
@@ -67,6 +76,7 @@ const ConfigureRecurrence: React.FC = () => {
         checklist: data.checklist || [],
         deadline_relative: data.deadline_relative || 0,
         responsible_id: data.responsible_id || '',
+        attachments: data.attachments || [],
         next_run: data.next_run ? (() => {
           const d = new Date(data.next_run);
           const pad = (n: number) => n.toString().padStart(2, '0');
@@ -98,7 +108,8 @@ const ConfigureRecurrence: React.FC = () => {
         checklist: formData.checklist,
         deadline_relative: formData.deadline_relative,
         responsible_id: formData.responsible_id,
-        next_run: nextRunDate.toISOString()
+        next_run: nextRunDate.toISOString(),
+        attachments: formData.attachments
       };
 
       let error;
@@ -151,6 +162,57 @@ const ConfigureRecurrence: React.FC = () => {
     setFormData(prev => ({
       ...prev,
       checklist: prev.checklist.filter((_, i) => i !== index)
+    }));
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    try {
+      setUploading(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Usuário não autenticado');
+
+      const newAttachments = [...formData.attachments];
+
+      for (const file of Array.from(files)) {
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${Math.random().toString(36).substring(2)}_${Date.now()}.${fileExt}`;
+        const filePath = `${user.id}/${fileName}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from('task-attachments')
+          .upload(filePath, file);
+
+        if (uploadError) throw uploadError;
+
+        const { data: { publicUrl } } = supabase.storage
+          .from('task-attachments')
+          .getPublicUrl(filePath);
+
+        newAttachments.push({
+          name: file.name,
+          url: publicUrl,
+          type: file.type,
+          size: file.size,
+          storage_path: filePath
+        });
+      }
+
+      setFormData(prev => ({ ...prev, attachments: newAttachments }));
+    } catch (error: any) {
+      console.error('Erro no upload:', error);
+      alert('Erro ao fazer upload do arquivo: ' + error.message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const removeAttachment = (index: number) => {
+    setFormData(prev => ({
+      ...prev,
+      attachments: prev.attachments.filter((_, i) => i !== index)
     }));
   };
 
@@ -263,6 +325,50 @@ const ConfigureRecurrence: React.FC = () => {
                   </button>
                 </div>
               ))}
+            </div>
+          </section>
+          <section className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-4">
+            <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+              <span className="material-symbols-outlined text-primary">attach_file</span> Anexos Padrão
+            </h3>
+            <div className="flex flex-col gap-4">
+              <div className="flex items-center justify-center w-full">
+                <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-xl border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 hover:bg-slate-100 dark:hover:bg-slate-900 cursor-pointer transition-all">
+                  <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                    <span className="material-symbols-outlined text-slate-400 text-3xl mb-2">cloud_upload</span>
+                    <p className="text-sm text-slate-500 font-medium">Clique para fazer upload ou arraste</p>
+                    <p className="text-xs text-slate-400 mt-1">PDF, PNG, JPG, ZIP (Máx. 10MB)</p>
+                  </div>
+                  <input type="file" className="hidden" multiple onChange={handleFileUpload} disabled={uploading} />
+                </label>
+              </div>
+
+              {uploading && (
+                <div className="flex items-center gap-3 text-sm text-primary animate-pulse">
+                  <span className="material-symbols-outlined spin">sync</span>
+                  <span>Fazendo upload dos arquivos...</span>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 gap-2">
+                {formData.attachments.map((file, index) => (
+                  <div key={index} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-900 rounded-lg group border border-slate-100 dark:border-slate-800">
+                    <div className="flex items-center gap-3">
+                      <span className="material-symbols-outlined text-slate-400">description</span>
+                      <div className="flex flex-col">
+                        <span className="text-sm font-medium truncate max-w-[200px]">{file.name}</span>
+                        <span className="text-[10px] text-slate-500">{(file.size / 1024).toFixed(1)} KB</span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => removeAttachment(index)}
+                      className="text-slate-400 hover:text-red-500 transition-colors"
+                    >
+                      <span className="material-symbols-outlined text-sm">close</span>
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
           </section>
         </div>

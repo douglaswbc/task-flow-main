@@ -38,7 +38,8 @@ serve(async (req) => {
                         origin: 'Recorrente',
                         deadline: deadline,
                         checklist: rt.checklist || [],
-                        responsible_id: rt.responsible_id // NEW: Pass the responsible person
+                        responsible_id: rt.responsible_id, // NEW: Pass the responsible person
+                        attachments: rt.attachments || [] // NEW: Propagate attachments
                     })
 
                 if (createError) throw createError
