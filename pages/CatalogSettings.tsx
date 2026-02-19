@@ -22,6 +22,10 @@ const CatalogSettings: React.FC = () => {
 
     // UI State
     const [showCategoryManager, setShowCategoryManager] = useState(false);
+    const [logsPage, setLogsPage] = useState(1);
+    const [totalLogs, setTotalLogs] = useState(0);
+    const [logsSearch, setLogsSearch] = useState('');
+    const itemsPerPage = 20;
 
     useEffect(() => {
         fetchData();
@@ -32,31 +36,58 @@ const CatalogSettings: React.FC = () => {
             // Não ativa o loading global para atualizações em background, apenas se for a primeira carga ou se desejado
             // setLoading(true); 
 
-            const [groupsRes, logsRes, categoriesRes] = await Promise.all([
+            const [groupsRes, categoriesRes] = await Promise.all([
                 supabase.from('whatsapp_groups').select('*').order('created_at', { ascending: false }),
-                supabase
-                    .from('processing_logs')
-                    .select(`
-                        *,
-                        whatsapp_groups (
-                            name,
-                            whatsapp_id
-                        ),
-                        processed_products (*)
-                    `)
-                    .order('processed_at', { ascending: false }),
                 supabase.from('catalog_categories').select('*').order('name', { ascending: true })
             ]);
 
             if (groupsRes.data) setGroups(groupsRes.data);
-            if (logsRes.data) setLogs(logsRes.data);
             if (categoriesRes.data) setCategories(categoriesRes.data);
+
+            // Fetch logs with pagination and search
+            await fetchLogs(logsPage, logsSearch);
         } catch (error: any) {
             console.error('Erro ao carregar dados:', error);
         } finally {
             setLoading(false);
         }
     };
+
+    const fetchLogs = async (page: number, search: string = '') => {
+        const from = (page - 1) * itemsPerPage;
+        const to = from + itemsPerPage - 1;
+
+        let query = supabase
+            .from('processing_logs')
+            .select(`
+                *,
+                whatsapp_groups (
+                    name,
+                    whatsapp_id
+                ),
+                processed_products (*)
+            `, { count: 'exact' });
+
+        if (search) {
+            query = query.or(`catalog_name.ilike.%${search}%,contact_name.ilike.%${search}%,contact_jid.ilike.%${search}%`);
+        }
+
+        const { data, count, error } = await query
+            .order('processed_at', { ascending: false })
+            .range(from, to);
+
+        if (error) {
+            console.error('Erro ao buscar logs:', error);
+            return;
+        }
+
+        if (data) setLogs(data);
+        if (count !== null) setTotalLogs(count);
+    };
+
+    useEffect(() => {
+        fetchLogs(logsPage, logsSearch);
+    }, [logsPage, logsSearch]);
 
     if (loading) {
         return (

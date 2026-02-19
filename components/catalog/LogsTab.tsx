@@ -9,7 +9,8 @@ import {
     ChevronDown,
     ChevronRight,
     Package,
-    FileText
+    FileText,
+    Trash2
 } from 'lucide-react';
 import { ProcessingLog, CatalogCategory } from '../../types';
 import ProductManager from './ProductManager';
@@ -19,40 +20,44 @@ interface LogsTabProps {
     categories: CatalogCategory[];
     onUpdate: () => void;
     onManageCategories: () => void;
+    currentPage: number;
+    onPageChange: (page: number) => void;
+    totalItems: number;
+    itemsPerPage: number;
+    searchQuery: string;
+    onSearchChange: (search: string) => void;
 }
 
 const LogsTab: React.FC<LogsTabProps> = ({
     logs,
     categories,
     onUpdate,
-    onManageCategories
+    onManageCategories,
+    currentPage,
+    onPageChange,
+    totalItems,
+    itemsPerPage,
+    searchQuery,
+    onSearchChange
 }) => {
     const [filters, setFilters] = useState({
         sourceType: 'all',
         category: 'all',
         status: 'all'
     });
-    const [searchQuery, setSearchQuery] = useState('');
-    const [currentPage, setCurrentPage] = useState(1);
+    // const [searchQuery, setSearchQuery] = useState(''); // Removed, now from props
+    // const [currentPage, setCurrentPage] = useState(1); // Removed, now from props
     const [expandedLogIds, setExpandedLogIds] = useState<Set<string>>(new Set());
 
     // Product Manager State
     const [selectedLogId, setSelectedLogId] = useState<string | null>(null);
     const [showProductManager, setShowProductManager] = useState(false);
+    const [deletingId, setDeletingId] = useState<string | null>(null);
 
-    const itemsPerPage = 20;
+    // const itemsPerPage = 20; // Removed, now from props
 
-    // Filter Logic
+    // Filter Logic - Mainly for dropdowns as search is now server-side
     const filteredLogs = logs.filter(log => {
-        // Search Filter
-        const matchesSearch =
-            log.catalog_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            (log.contact_name && log.contact_name.toLowerCase().includes(searchQuery.toLowerCase())) ||
-            (log.category && log.category.toLowerCase().includes(searchQuery.toLowerCase())) ||
-            (log.contact_jid && log.contact_jid.toLowerCase().includes(searchQuery.toLowerCase()));
-
-        if (!matchesSearch) return false;
-
         // Dropdown Filters
         if (filters.sourceType !== 'all' && log.source_type !== filters.sourceType) return false;
         if (filters.category !== 'all' && log.category !== filters.category) return false;
@@ -61,12 +66,14 @@ const LogsTab: React.FC<LogsTabProps> = ({
         return true;
     });
 
-    // Pagination
-    const totalPages = Math.ceil(filteredLogs.length / itemsPerPage);
-    const paginatedLogs = filteredLogs.slice(
-        (currentPage - 1) * itemsPerPage,
-        currentPage * itemsPerPage
-    );
+    // Pagination - Logic moved to CatalogSettings (server-side)
+    // const totalPages = Math.ceil(filteredLogs.length / itemsPerPage);
+    // const paginatedLogs = filteredLogs.slice(
+    //     (currentPage - 1) * itemsPerPage,
+    //     currentPage * itemsPerPage
+    // );
+    const totalPages = Math.ceil(totalItems / itemsPerPage);
+    const paginatedLogs = filteredLogs; // We use the filtered logs directly as they are already paginated from the server
 
     const toggleExpandPayload = (logId: string) => {
         setExpandedLogIds(prev => {
@@ -78,6 +85,30 @@ const LogsTab: React.FC<LogsTabProps> = ({
             }
             return newSet;
         });
+    };
+
+    const handleDeleteLog = async (logId: string) => {
+        if (!window.confirm('Tem certeza que deseja deletar este catálogo? Esta ação não pode ser desfeita.')) {
+            return;
+        }
+
+        setDeletingId(logId);
+        try {
+            const { error } = await supabase
+                .from('processing_logs')
+                .delete()
+                .eq('id', logId);
+
+            if (error) throw error;
+
+            toast.success('Catálogo deletado com sucesso!');
+            onUpdate();
+        } catch (error: any) {
+            console.error('Erro ao deletar catálogo:', error);
+            toast.error('Erro ao deletar catálogo: ' + error.message);
+        } finally {
+            setDeletingId(null);
+        }
     };
 
     const handleOpenProductManager = (logId: string) => {
@@ -111,8 +142,8 @@ const LogsTab: React.FC<LogsTabProps> = ({
                         placeholder="Buscar por catálogo, contato, categoria ou JID..."
                         value={searchQuery}
                         onChange={(e) => {
-                            setSearchQuery(e.target.value);
-                            setCurrentPage(1);
+                            onSearchChange(e.target.value);
+                            onPageChange(1);
                         }}
                         className="w-full px-4 py-2.5 pl-10 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 focus:ring-2 focus:ring-primary/20 outline-none text-sm"
                     />
@@ -155,6 +186,7 @@ const LogsTab: React.FC<LogsTabProps> = ({
                                 <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Contato/Grupo</th>
                                 <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
                                 <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Data</th>
+                                <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Ações</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
@@ -277,12 +309,24 @@ const LogsTab: React.FC<LogsTabProps> = ({
                                                         minute: '2-digit'
                                                     })}
                                                 </td>
+
+                                                {/* Ações */}
+                                                <td className="px-6 py-4">
+                                                    <button
+                                                        onClick={() => handleDeleteLog(log.id)}
+                                                        disabled={deletingId === log.id}
+                                                        className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg transition-all disabled:opacity-50"
+                                                        title="Deletar Catálogo"
+                                                    >
+                                                        <Trash2 className={`w-4 h-4 ${deletingId === log.id ? 'animate-pulse' : ''}`} />
+                                                    </button>
+                                                </td>
                                             </tr>
 
                                             {/* Nested Product Table */}
                                             {isExpanded && hasProducts && log.processed_products && (
                                                 <tr className="bg-slate-50/50 dark:bg-slate-950/20">
-                                                    <td colSpan={7} className="px-6 pb-6 pt-0">
+                                                    <td colSpan={8} className="px-6 pb-6 pt-0">
                                                         <div className="ml-10 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm">
                                                             <div className="flex items-center justify-between mb-3">
                                                                 <div className="flex items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-300">
@@ -344,32 +388,32 @@ const LogsTab: React.FC<LogsTabProps> = ({
                 {totalPages > 1 && (
                     <div className="px-6 py-4 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
                         <div className="text-sm text-slate-600 dark:text-slate-400">
-                            Página {currentPage} de {totalPages} • {filteredLogs.length} registro(s)
+                            Página {currentPage} de {totalPages} • {totalItems} registro(s)
                         </div>
                         <div className="flex gap-2">
                             <button
-                                onClick={() => setCurrentPage(1)}
+                                onClick={() => onPageChange(1)}
                                 disabled={currentPage === 1}
                                 className="px-3 py-1.5 rounded-lg text-xs font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
                             >
                                 Primeira
                             </button>
                             <button
-                                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                onClick={() => onPageChange(Math.max(1, currentPage - 1))}
                                 disabled={currentPage === 1}
                                 className="px-3 py-1.5 rounded-lg text-xs font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
                             >
                                 Anterior
                             </button>
                             <button
-                                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
                                 disabled={currentPage === totalPages}
                                 className="px-3 py-1.5 rounded-lg text-xs font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
                             >
                                 Próxima
                             </button>
                             <button
-                                onClick={() => setCurrentPage(totalPages)}
+                                onClick={() => onPageChange(totalPages)}
                                 disabled={currentPage === totalPages}
                                 className="px-3 py-1.5 rounded-lg text-xs font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
                             >
