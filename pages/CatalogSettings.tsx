@@ -10,10 +10,12 @@ import { WhatsAppGroup, ProcessingLog, CatalogCategory } from '../types';
 import GroupsTab from '../components/catalog/GroupsTab';
 import LogsTab from '../components/catalog/LogsTab';
 import CategoryManager from '../components/catalog/CategoryManager';
+import BroadcastTab from '../components/catalog/BroadcastTab';
+import { Send } from 'lucide-react';
 
 const CatalogSettings: React.FC = () => {
     const [loading, setLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState<'groups' | 'logs'>('groups');
+    const [activeTab, setActiveTab] = useState<'groups' | 'logs' | 'broadcast'>('groups');
 
     // Data State
     const [groups, setGroups] = useState<WhatsAppGroup[]>([]);
@@ -86,8 +88,10 @@ const CatalogSettings: React.FC = () => {
     };
 
     useEffect(() => {
-        fetchLogs(logsPage, logsSearch);
-    }, [logsPage, logsSearch]);
+        if (activeTab === 'logs') {
+            fetchLogs(logsPage, logsSearch);
+        }
+    }, [logsPage, logsSearch, activeTab]);
 
     if (loading) {
         return (
@@ -137,6 +141,17 @@ const CatalogSettings: React.FC = () => {
                     <Activity className="w-4 h-4" />
                     Logs de Processamento
                 </button>
+
+                <button
+                    onClick={() => setActiveTab('broadcast')}
+                    className={`flex items-center gap-2 px-6 py-3 font-bold text-sm transition-all ${activeTab === 'broadcast'
+                        ? 'border-b-2 border-primary text-primary'
+                        : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                        }`}
+                >
+                    <Send className="w-4 h-4" />
+                    Transmissão
+                </button>
             </div>
 
             {/* Content */}
@@ -145,13 +160,15 @@ const CatalogSettings: React.FC = () => {
                     groups={groups}
                     onUpdate={fetchData}
                 />
-            ) : (
+            ) : activeTab === 'logs' ? (
                 <LogsTab
                     logs={logs}
                     categories={categories}
                     onUpdate={fetchData}
                     onManageCategories={() => setShowCategoryManager(true)}
                 />
+            ) : (
+                <BroadcastTab groups={groups} />
             )}
 
             {/* Category Manager Dialog */}

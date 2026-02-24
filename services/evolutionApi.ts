@@ -350,6 +350,15 @@ export const evolutionApi = {
             fileName: string,
             caption?: string
         ) => {
+            const extension = fileName.toLowerCase().split('.').pop();
+            let mediaType = 'image';
+
+            if (['pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt'].includes(extension || '')) {
+                mediaType = 'document';
+            } else if (['mp4', 'avi', 'mov'].includes(extension || '')) {
+                mediaType = 'video';
+            }
+
             const res = await fetch(`${EVO_URL}/message/sendMedia/${instanceName}`, {
                 method: 'POST',
                 headers,
@@ -358,7 +367,7 @@ export const evolutionApi = {
                     media: mediaBase64,
                     fileName,
                     caption: caption || '',
-                    mediaType: fileName.toLowerCase().endsWith('.pdf') ? 'document' : 'image'
+                    mediatype: mediaType
                 }),
             });
 
