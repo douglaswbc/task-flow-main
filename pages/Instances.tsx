@@ -175,7 +175,28 @@ export default function Instances() {
                     <div>
                         <p className="text-red-800 font-medium">Erro</p>
                         <p className="text-red-600 text-sm">{error}</p>
+                        {error.toLowerCase().includes('connection closed') && (
+                            <div className="mt-2 text-sm">
+                                <p className="text-blue-700 font-medium italic mb-2">
+                                    💡 O WhatsApp parece ter caído nesta instância. Tente reiniciá-la para restabelecer a conexão.
+                                </p>
+                                <div className="flex gap-2">
+                                    {instances.map(inst => (
+                                        inst.connection_status === 'open' && (
+                                            <button
+                                                key={inst.id}
+                                                onClick={() => handleRestart(inst)}
+                                                className="px-3 py-1 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 font-bold transition-colors text-xs"
+                                            >
+                                                Reiniciar {inst.instance_name}
+                                            </button>
+                                        )
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                     </div>
+
                     <button onClick={() => setError('')} className="ml-auto text-red-600 hover:text-red-800">
                         ×
                     </button>

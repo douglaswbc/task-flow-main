@@ -61,6 +61,19 @@ const generateUniqueInstanceName = (baseName: string): string => {
     return `${sanitized}_${random}`;
 };
 
+/**
+ * Extrai a mensagem de erro das respostas da Evolution API
+ * Trata casos onde 'message' pode ser string ou string[]
+ */
+const extractErrorMessage = (data: any): string => {
+    const message = data?.response?.message || data?.message;
+    if (Array.isArray(message)) {
+        return message[0];
+    }
+    return typeof message === 'string' ? message : '';
+};
+
+
 /* =====================================================
  * API DE INSTÂNCIAS WHATSAPP
  * ===================================================== */
@@ -199,7 +212,7 @@ export const evolutionApi = {
                 if (!response.ok) return 'close';
 
                 const data = await response.json();
-                const status = data.instance?.state || 'close';
+                const status = data.instance?.state || data.state || 'close';
 
                 // Atualiza status no banco
                 await supabase
@@ -213,6 +226,7 @@ export const evolutionApi = {
             }
         },
 
+
         /**
          * Desconecta (Logout) a instância
          */
@@ -224,13 +238,14 @@ export const evolutionApi = {
 
             if (!response.ok) {
                 const errorData = await response.json();
-                const errorMsg = errorData?.response?.message;
+                const errorMsg = extractErrorMessage(errorData);
 
                 // Ignora erro se já estiver desconectado
-                if (!(typeof errorMsg === 'string' && errorMsg.includes('Connection Closed'))) {
-                    throw new Error('Falha ao desconectar instância.');
+                if (!errorMsg.toLowerCase().includes('connection closed')) {
+                    throw new Error(errorMsg || 'Falha ao desconectar instância.');
                 }
             }
+
 
             // Atualiza status no banco
             await supabase
@@ -289,8 +304,10 @@ export const evolutionApi = {
             );
 
             if (!response.ok) {
-                throw new Error('Erro ao buscar grupos do WhatsApp');
+                const errorData = await response.json();
+                throw new Error(extractErrorMessage(errorData) || 'Erro ao buscar grupos do WhatsApp');
             }
+
 
             const data = await response.json();
             return data;
@@ -313,8 +330,10 @@ export const evolutionApi = {
             );
 
             if (!response.ok) {
-                throw new Error('Erro ao buscar contatos do WhatsApp');
+                const errorData = await response.json();
+                throw new Error(extractErrorMessage(errorData) || 'Erro ao buscar contatos do WhatsApp');
             }
+
 
             const data = await response.json();
             return data;
@@ -334,8 +353,10 @@ export const evolutionApi = {
             });
 
             if (!res.ok) {
-                throw new Error('Erro ao enviar mensagem via WhatsApp');
+                const errorData = await res.json();
+                throw new Error(extractErrorMessage(errorData) || 'Erro ao enviar mensagem via WhatsApp');
             }
+
 
             return res.json();
         },
@@ -372,8 +393,10 @@ export const evolutionApi = {
             });
 
             if (!res.ok) {
-                throw new Error('Erro ao enviar mídia via WhatsApp');
+                const errorData = await res.json();
+                throw new Error(extractErrorMessage(errorData) || 'Erro ao enviar mídia via WhatsApp');
             }
+
 
             return res.json();
         },

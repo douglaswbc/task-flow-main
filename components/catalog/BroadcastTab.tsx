@@ -38,7 +38,7 @@ const BroadcastTab: React.FC<BroadcastTabProps> = ({ groups }) => {
     const [message, setMessage] = useState('');
     const [file, setFile] = useState<File | null>(null);
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-    const [delay, setDelay] = useState(2); // Padrão 2 segundos
+    const [delay, setDelay] = useState(5); // Padrão 5 segundos
 
     // Controle de Envio
     const [isSending, setIsSending] = useState(false);
@@ -65,18 +65,29 @@ const BroadcastTab: React.FC<BroadcastTabProps> = ({ groups }) => {
         }
     }, [file]);
 
+    // Valida a instância selecionada quando a lista de instâncias muda
+    useEffect(() => {
+        if (instances.length > 0) {
+            const isStillConnected = instances.some(i => i.instance_name === selectedInstance);
+            if (!isStillConnected) {
+                setSelectedInstance(instances[0].instance_name);
+            }
+        } else {
+            setSelectedInstance('');
+        }
+    }, [instances]);
+
+
     const loadInstances = async () => {
         try {
             const data = await evolutionApi.instances.list();
             const openInstances = data.filter(i => i.connection_status === 'open');
             setInstances(openInstances);
-            if (openInstances.length > 0 && !selectedInstance) {
-                setSelectedInstance(openInstances[0].instance_name);
-            }
         } catch (error) {
             console.error('Erro ao carregar instâncias:', error);
         }
     };
+
 
     const loadSavedState = () => {
         const saved = localStorage.getItem(STORAGE_KEY);

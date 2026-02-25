@@ -107,9 +107,10 @@ const GroupsTab: React.FC<GroupsTabProps> = ({ groups, onUpdate }) => {
             const connectedInstances = instancesList.filter(inst => inst.connection_status === 'open');
 
             if (connectedInstances.length === 0) {
-                toast.error('Nenhuma instância do WhatsApp conectada. Conecte uma instância primeiro.');
+                toast.error('Nenhuma instância do WhatsApp conectada. Conecte sua instância antes de importar.');
                 return;
             }
+
 
             setInstances(connectedInstances);
             setShowInstanceSelector(true);
